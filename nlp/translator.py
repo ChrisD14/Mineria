@@ -19,7 +19,6 @@ def configure_gemini_api_for_translation():
     genai.configure(api_key=GEMINI_API_KEY_TRANSLATION)
     logging.info("API de Gemini configurada exitosamente para el servicio de traducción.")
 
-
 def translate_text_to_english(text: str) -> dict:
     """
     Traduce el texto dado del español al inglés utilizando la API de Google Gemini.

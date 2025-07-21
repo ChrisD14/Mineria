@@ -6,27 +6,34 @@ import random
 import logging # Asegúrate de importar logging
 
 # Configura el logger para ver mensajes de depuración
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Importa las funciones de NLP
 from nlp.intent_recognizer import recognize_intent
-from nlp.entity_extractor import extract_entities
+from nlp.entity_extractor import extract_entities # Asegúrate de que este sea el archivo actualizado
+from nlp.translator import translate_text_to_english # Asumiendo que esta función existe
+
 from scrapers.la_ganga import LaGangaScraper
 from scrapers.computron import ComputronScraper
-from scrapers.novicompu import NovicompuScraper
 from config import RECOMMENDATION_THRESHOLDS 
 
 class RecommendationEngine:
     def __init__(self):
         self.scrapers = {
-            "novicompu": NovicompuScraper(),
-            #"computron": ComputronScraper(),
             #"la_ganga": LaGangaScraper(),
-            
+            "computron": ComputronScraper(),
             # Agrega otros scrapers aquí
         }
+        # Puedes añadir un mapeo de propósito a requisitos mínimos aquí
+        self.purpose_requirements = {
+            "estudio": {"min_ram_gb": 8, "min_storage_gb": 256, "storage_type": "SSD", "cpu_brand": None, "gpu_required": False},
+            "gaming": {"min_ram_gb": 16, "min_storage_gb": 512, "storage_type": "SSD", "cpu_brand": None, "gpu_required": True},
+            "diseño_grafico": {"min_ram_gb": 16, "min_storage_gb": 512, "storage_type": "SSD", "cpu_brand": None, "gpu_required": True}, # Ajustar a 32GB RAM en _recommend_computer
+            "oficina": {"min_ram_gb": 8, "min_storage_gb": 256, "storage_type": "SSD", "cpu_brand": None, "gpu_required": False},
+            "programacion": {"min_ram_gb": 16, "min_storage_gb": 512, "storage_type": "SSD", "cpu_brand": None, "gpu_required": False},
+        }
 
-    # --- NUEVA FUNCIÓN PARA GENERAR LA QUERY DE BÚSQUEDA ---
+    # --- NUEVA FUNCIÓN PARA GENERAR LA QUERY DE BÚSQUEDA ---\
     def _generate_search_query(self, user_intent, extracted_entities):
         query_parts = []
 
@@ -37,294 +44,248 @@ class RecommendationEngine:
             elif "escritorio" in extracted_entities.get("modality", []):
                 query_parts.append("computadora escritorio") # Más específico que solo "pc"
             else:
+                # Si no se especifica modalidad pero la intención es computadora, default a laptop
                 query_parts.append("laptop")
-        elif user_intent == "memoria_ram":
-            query_parts.append("memoria RAM")
-        elif user_intent == "almacenamiento":
-            query_parts.append("disco duro") # Genérico para almacenamiento
 
-        # 2. Añadir especificaciones clave de forma concisa (solo para productos principales como laptops)
-        if user_intent == "computadora":
-            specs = extracted_entities.get("specs", {})
+        # 2. Añadir especificaciones clave a la query
+        specs = extracted_entities.get("specs", {})
+        
+        # RAM
+        ram_gb = specs.get("ram_gb")
+        if ram_gb:
+            query_parts.append(f"{ram_gb}GB RAM") # Ahora se busca explícitamente "RAM"
 
-            if specs.get("ram_gb"):
-                query_parts.append(f"{specs['ram_gb']}GB RAM") 
+        # Almacenamiento
+        storage_gb = specs.get("storage_gb")
+        storage_type = specs.get("storage_type")
+        if storage_gb:
+            if storage_type:
+                query_parts.append(f"{storage_gb}GB {storage_type}")
+            else:
+                query_parts.append(f"{storage_gb}GB SSD") # Asumir SSD si no se especifica tipo para búsqueda
 
-            if specs.get("storage_gb"):
-                storage_type = specs.get("storage_type", "SSD").upper() # Predeterminar a SSD
-                query_parts.append(f"{specs['storage_gb']}GB {storage_type}")
+        # CPU
+        cpu_brand = specs.get("cpu_brand")
+        if cpu_brand:
+            query_parts.append(cpu_brand)
 
-            # CPU Brand
-            if specs.get("cpu_brand"):
-                query_parts.append(specs['cpu_brand'])
+        # GPU
+        gpu_model = specs.get("gpu_model")
+        if gpu_model:
+            query_parts.append(gpu_model)
+        elif specs.get("gpu_required"):
+            query_parts.append("tarjeta grafica") # Si solo se requiere GPU sin modelo específico
 
-            # GPU Model o indicación de GPU
-            if specs.get("gpu_model"):
-                query_parts.append(specs['gpu_model'])
-            elif specs.get("gpu_required"): # Si solo se requiere GPU pero no se especificó modelo
-                query_parts.append("tarjeta grafica") 
+        # 3. Añadir presupuesto (palabras clave genéricas para la búsqueda inicial)
+        budget = extracted_entities.get("budget")
+        if budget == "bajo":
+            query_parts.append("economica")
+        elif budget == "alto":
+            query_parts.append("premium")
+        
+        # Unir todas las partes en una sola cadena de consulta
+        # Limita la longitud de la query para evitar problemas con las URLs de búsqueda
+        search_query = " ".join(query_parts).strip()
+        if not search_query:
+            search_query = user_intent if user_intent != "desconocido" else "producto tecnologico"
 
-            # 3. Añadir palabras clave relacionadas con el propósito/uso, pero con precaución
-            purpose_keywords = extracted_entities.get("purpose", [])
-            if "diseño grafico" in purpose_keywords:
-                query_parts.append("profesional") # "profesional" puede ser mejor que "diseño" solo
-            elif "gaming" in purpose_keywords:
-                query_parts.append("gamer")
+        logging.info(f"Query de búsqueda generada: '{search_query}'")
+        return search_query.strip()
+    
+    def _recommend_computer(self, entities: dict, user_original_prompt: str) -> list:
+        # Aquí consolidamos los requisitos del usuario
+        # Inicializamos los requisitos con valores que no restrinjan si no se especifican
+        requirements = {
+            "min_ram_gb": 0,
+            "min_storage_gb": 0,
+            "cpu_brand": None,
+            "gpu_required": entities["specs"].get("gpu_required", False), # Usar el GPU requerido extraído
+            "desired_gpu_keyword": entities["specs"].get("gpu_model"), # Modelo de GPU deseado
+            "storage_type": entities["specs"].get("storage_type"),
+            "min_price": entities.get("min_price"),
+            "max_price": entities.get("max_price"),
+        }
+
+        # Aplicar requisitos basados en el propósito
+        for purpose in entities["purpose"]:
+            if purpose in self.purpose_requirements:
+                reqs = self.purpose_requirements[purpose]
+                requirements["min_ram_gb"] = max(requirements["min_ram_gb"], reqs["min_ram_gb"])
+                requirements["min_storage_gb"] = max(requirements["min_storage_gb"], reqs["min_storage_gb"])
+                if reqs["cpu_brand"]:
+                    requirements["cpu_brand"] = reqs["cpu_brand"]
+                if reqs["gpu_required"]:
+                    requirements["gpu_required"] = True
+                if reqs["storage_type"] and not requirements["storage_type"]: # Si no se especificó y el propósito lo pide
+                    requirements["storage_type"] = reqs["storage_type"]
+
+        # Sobrescribir con especificaciones explícitas del usuario si existen
+        if entities["specs"].get("ram_gb") is not None:
+            requirements["min_ram_gb"] = max(requirements["min_ram_gb"], entities["specs"]["ram_gb"])
+        if entities["specs"].get("storage_gb") is not None:
+            requirements["min_storage_gb"] = max(requirements["min_storage_gb"], entities["specs"]["storage_gb"])
+        if entities["specs"].get("storage_type") is not None:
+             requirements["storage_type"] = entities["specs"]["storage_type"] # El tipo explícito del usuario es prioritario
+        if entities["specs"].get("cpu_brand") is not None:
+            requirements["cpu_brand"] = entities["specs"]["cpu_brand"]
+        
+        # Consideración especial para diseño gráfico: 32GB de RAM si no se especificó más
+        if "diseño_grafico" in entities["purpose"] and requirements["min_ram_gb"] < 32:
+            requirements["min_ram_gb"] = max(requirements["min_ram_gb"], 32)
+            logging.info("Ajustando requisito de RAM a 32GB para diseño gráfico.")
+
+
+        # Manejo del presupuesto cualitativo si no hay rangos de precio explícitos
+        if not (requirements["min_price"] or requirements["max_price"]) and entities["budget"]:
+            if entities["budget"] == "bajo":
+                requirements["max_price"] = RECOMMENDATION_THRESHOLDS["low_budget_max_price"]
+            elif entities["budget"] == "medio":
+                requirements["max_price"] = RECOMMENDATION_THRESHOLDS["medium_budget_max_price"]
+            elif entities["budget"] == "alto":
+                requirements["min_price"] = RECOMMENDATION_THRESHOLDS["medium_budget_max_price"] # o un valor inicial más alto
+
+        
+        # Generar la query de búsqueda para los scrapers
+        search_query = self._generate_search_query("computadora", entities)
+        logging.info(f"Buscando computadoras con la query: '{search_query}' y requisitos: {requirements}")
+
+        all_found_products = []
+        for scraper_name, scraper_instance in self.scrapers.items():
+            logging.info(f"Scraping en {scraper_name} para '{search_query}'...")
+            try:
+                # La función search_products debería devolver una lista de diccionarios
+                # con 'name', 'price', 'url', 'store', 'image_url', 'description', 'specifications'
+                store_products_basic = scraper_instance.search_products(search_query)
+                logging.info(f"Se encontraron {len(store_products_basic)} productos básicos en {scraper_name}.")
+                
+                # Para cada producto básico, intentar obtener detalles completos
+                for basic_product in store_products_basic:
+                    if basic_product.get('url') and basic_product['url'] != '#':
+                        detailed_product = scraper_instance.parse_product_page(basic_product['url'])
+                        if detailed_product:
+                            # Fusionar detalles básicos con los detallados
+                            # Priorizar los detallados si hay superposición
+                            merged_details = {**basic_product, **detailed_product}
+                            # Asegurarse de que 'specifications' sea un diccionario
+                            merged_details['specifications'] = {
+                                **basic_product.get('specifications', {}), 
+                                **detailed_product.get('specifications', {})
+                            }
+                            all_found_products.append({
+                                'category': basic_product.get('category', 'Computadora'),
+                                'description': merged_details.get('description', basic_product.get('name')),
+                                'details': merged_details, # Contiene todos los detalles combinados
+                                'score': 0 # El score se calculará después
+                            })
+                        else:
+                            # Si no se pueden obtener detalles completos, usar solo los básicos
+                            logging.warning(f"No se pudieron obtener detalles completos para {basic_product.get('name')} en {scraper_name}. Usando solo datos básicos.")
+                            all_found_products.append({
+                                'category': basic_product.get('category', 'Computadora'),
+                                'description': basic_product.get('description', basic_product.get('name')),
+                                'details': basic_product, # Usar solo los detalles básicos
+                                'score': 0
+                            })
+                    else:
+                        logging.warning(f"Producto sin URL o URL inválida en {scraper_name}: {basic_product.get('name')}. Omitiendo detalles.")
+                        all_found_products.append({
+                            'category': basic_product.get('category', 'Computadora'),
+                            'description': basic_product.get('description', basic_product.get('name')),
+                            'details': basic_product, # Usar solo los detalles básicos
+                            'score': 0
+                        })
+
+            except Exception as e:
+                logging.error(f"Error al scrapear en {scraper_name}: {e}", exc_info=True)
+                continue # Continúa con el siguiente scraper
+        
+        logging.info(f"Total de productos encontrados después de scraping: {len(all_found_products)}")
+        if not all_found_products:
+            logging.warning("No se encontraron productos para recomendar.")
+            return []
+
+
+        # Filtrar y puntuar productos
+        scored_recommendations = []
+        for product_rec in all_found_products:
+            score = 0
+            details = product_rec.get("details", {})
+            specs = details.get("specifications", {})
+            product_price = details.get("price")
             
-        # Para RAM y Almacenamiento, también añadimos specs
-        elif user_intent == "memoria_ram":
-            specs = extracted_entities.get("specs", {})
-            if specs.get("ram_gb"):
-                query_parts.append(f"{specs['ram_gb']}GB")
+            # --- Criterios de puntuación ---
+
+            # 1. Requisitos de RAM
+            product_ram = specs.get("ram_gb")
+            if product_ram and product_ram >= requirements["min_ram_gb"]:
+                score += 0.30 # Alto peso para RAM
+
+            # 2. Requisitos de Almacenamiento
+            product_storage_gb = specs.get("storage_gb")
+            product_storage_type = specs.get("storage_type")
+            if product_storage_gb and product_storage_gb >= requirements["min_storage_gb"]:
+                score += 0.20 # Peso para cantidad de almacenamiento
+                if requirements["storage_type"] and product_storage_type and \
+                   requirements["storage_type"].lower() == product_storage_type.lower():
+                    score += 0.10 # Bono por tipo de almacenamiento (ej. SSD)
+
+            # 3. Requisitos de CPU (si aplica)
+            product_cpu = specs.get("cpu_brand")
+            if requirements["cpu_brand"] and product_cpu and \
+               requirements["cpu_brand"].lower() in product_cpu.lower():
+                score += 0.15 # Peso para CPU
+
+            # 4. Requisitos de GPU
+            if requirements["gpu_required"]:
+                if specs.get("gpu_model"): # Si tiene un modelo de GPU
+                    score += 0.20
+                    if requirements["desired_gpu_keyword"] and \
+                       requirements["desired_gpu_keyword"].lower() in specs["gpu_model"].lower():
+                       score += 0.05 # Bono si coincide con modelo deseado
+            
+            # 5. Rango de precios
+            if product_price is not None:
+                if requirements["min_price"] is not None and product_price < requirements["min_price"]:
+                    score -= 0.20 # Penalizar si es muy barato/por debajo del mínimo
+                if requirements["max_price"] is not None and product_price > requirements["max_price"]:
+                    score -= 0.30 # Penalizar fuertemente si excede el presupuesto
+                elif (requirements["min_price"] is None or product_price >= requirements["min_price"]) and \
+                     (requirements["max_price"] is None or product_price <= requirements["max_price"]):
+                    score += 0.10 # Bono por estar dentro del presupuesto
+
+            # Asegurarse de que el score no sea negativo
+            product_rec['score'] = max(0, score)
+            scored_recommendations.append(product_rec)
+
+        # Ordenar por puntuación (descendente) y luego por precio (ascendente)
+        scored_recommendations.sort(key=lambda x: (x['score'], -x['details'].get('price', float('inf'))), reverse=True)
+
+        # Limitar a las mejores recomendaciones
+        final_recommendations = [
+            rec for rec in scored_recommendations 
+            if rec['score'] >= RECOMMENDATION_THRESHOLDS["min_score"] # Usa el umbral del config
+        ][:RECOMMENDATION_THRESHOLDS["max_results_to_return"]]
         
-        elif user_intent == "almacenamiento":
-            specs = extracted_entities.get("specs", {})
-            if specs.get("storage_type"):
-                query_parts.append(specs["storage_type"].upper())
-            if specs.get("storage_gb"):
-                query_parts.append(f"{specs['storage_gb']}GB")
+        logging.info(f"Se encontraron {len(final_recommendations)} recomendaciones finales después de filtrar.")
 
-
-        # Unir las partes, eliminando duplicados y espacios extra.
-        # Usamos un set para eliminar duplicados y luego volvemos a lista para preservar el orden inicial.
-        # Ordenamos para asegurar que las palabras más importantes (ej. "laptop", "32GB RAM") aparezcan primero.
-        # Esto es una heurística y puede ser afinado.
-        unique_query_parts = []
-        seen = set()
-        for part in query_parts:
-            if part not in seen:
-                unique_query_parts.append(part)
-                seen.add(part)
+        # Añadir la recomendación del experto de Gemini si hay resultados
+        if final_recommendations:
+            from nlp.gemini_recommender_assistant import get_gemini_expert_recommendation
+            logging.info("Solicitando recomendación experta a Gemini...")
+            gemini_advice = get_gemini_expert_recommendation(user_original_prompt, final_recommendations)
+            
+            # Añadir la recomendación de Gemini como el primer elemento si es relevante
+            # O puedes añadirla como una propiedad especial de la lista de recomendaciones
+            if gemini_advice:
+                final_recommendations.insert(0, {
+                    'category': 'Consejo de Experto',
+                    'description': gemini_advice,
+                    'details': {}, # No hay detalles de producto para el consejo
+                    'score': 1.0 # Una puntuación alta para que aparezca primero
+                })
         
-        # Opcional: ordenar las palabras clave de forma estratégica.
-        # Por ahora, el orden de adición es suficientemente bueno.
+        return final_recommendations
 
-        final_query = " ".join(unique_query_parts).strip()
-        
-        # Fallback si la query queda vacía o muy genérica
-        if not final_query:
-            if "portatil" in extracted_entities.get("modality", []):
-                final_query = "laptop"
-            else:
-                final_query = "computadora"
-
-        return final_query
-    # --- FIN NUEVA FUNCIÓN ---
-
-    def _extract_gpu_info(self, specifications, description=None):
-        """
-        Intenta extraer la información de la GPU de las especificaciones y opcionalmente de la descripción.
-        """
-        if not specifications:
-            specifications = {} # Asegura que sea un diccionario para evitar errores si es None
-
-        # Palabras clave comunes para GPU (puedes expandir esto)
-        gpu_keywords = [
-            "tarjeta gráfica", "gráficos", "gpu", "vídeo", "video",
-            "nvidia", "geforce", "rtx", "gtx", "quadro",
-            "amd", "radeon", "rx", "vega",
-            "intel iris", "intel uhd", "intel hd graphics", "intel graphics", # Gráficos integrados
-            "iris xe", "uhd graphics" # Simplificaciones o variantes
-        ]
-
-        # Busca en las claves y valores de las especificaciones
-        for key, value in specifications.items():
-            key_lower = key.lower()
-            value_lower = str(value).lower() # Asegurarse de que el valor sea string
-
-            for keyword in gpu_keywords:
-                if keyword in key_lower or keyword in value_lower:
-                    # Si la clave es específica de GPU, devuelve su valor
-                    if any(k in key_lower for k in ["gráfic", "gpu", "video"]):
-                        return value
-                    # Si la palabra clave se encontró en el valor, devuelve el valor.
-                    return value # Puedes refinar esto con regex para extraer el modelo
-
-        # Si no se encontró en las especificaciones estructuradas, busca en la descripción
-        if description:
-            description_lower = str(description).lower()
-            for keyword in gpu_keywords:
-                if keyword in description_lower:
-                    # Si se encuentra en la descripción, puedes devolver la palabra clave o el segmento.
-                    # Para ser más útil, puedes intentar extraer el texto alrededor del keyword.
-                    # Por simplicidad, devolvemos el keyword.
-                    return f"Mención en descripción: {keyword}"
-        
-        return None # No se encontró información de GPU
-
-    def _parse_cpu_info(self, cpu_string):
-        """Intenta extraer el fabricante de la CPU (Intel/AMD) y el modelo."""
-        if not cpu_string:
-            return None, None
-        cpu_lower = cpu_string.lower()
-        if "intel" in cpu_lower:
-            return "Intel", cpu_string
-        elif "amd" in cpu_lower:
-            return "AMD", cpu_string
-        return None, cpu_string # Fabricante desconocido, pero devolvemos el string
-
-    def _parse_ram_info(self, ram_string):
-        """Intenta extraer la cantidad de RAM en GB."""
-        if not ram_string:
-            return None
-        # Busca números seguidos de GB o G
-        match = re.search(r'(\d+)\s*(?:gb|g)', str(ram_string).lower())
-        if match:
-            try:
-                return int(match.group(1))
-            except ValueError:
-                pass
-        return None
-
-    def _parse_storage_info(self, storage_string):
-        """Intenta extraer la cantidad de almacenamiento en GB/TB y el tipo."""
-        if not storage_string:
-            return None, None # cant_gb, type
-
-        storage_lower = str(storage_string).lower()
-        
-        cant_gb = None
-        # Busca TB y convierte a GB
-        tb_match = re.search(r'(\d+)\s*tb', storage_lower)
-        if tb_match:
-            try:
-                cant_gb = int(tb_match.group(1)) * 1024
-            except ValueError:
-                pass
-        
-        # Busca GB
-        if not cant_gb: # Si no se encontró en TB, busca en GB
-            gb_match = re.search(r'(\d+)\s*(?:gb|g)', storage_lower)
-            if gb_match:
-                try:
-                    cant_gb = int(gb_match.group(1))
-                except ValueError:
-                    pass
-
-        storage_type = None
-        if "ssd" in storage_lower:
-            storage_type = "SSD"
-        elif "hdd" in storage_lower or "disco duro" in storage_lower:
-            storage_type = "HDD"
-        elif "nvme" in storage_lower:
-            storage_type = "NVMe SSD" # Más específico
-
-        return cant_gb, storage_type
-
-    def _score_product(self, product_details, user_requirements):
-        """
-        Calcula un puntaje para un producto basado en los requisitos del usuario.
-        """
-        score = 0
-        weights = user_requirements.get("weights", {
-            "price": 0.25,
-            "ram": 0.2,
-            "cpu": 0.2,
-            "gpu": 0.2,
-            "storage": 0.15
-        })
-
-        # Asegurarse de que los campos existan y sean del tipo correcto
-        # Aquí es crucial el manejo de errores si 'price' no es numérico o si falta
-        price = float(product_details.get('price')) if product_details.get('price') is not None else 999999
-        specs = product_details.get('specifications', {})
-        description = product_details.get('description', '') 
-
-        logging.debug(f"Puntuando producto: '{product_details.get('name', 'N/A')}' de {product_details.get('store', 'N/A')}")
-        logging.debug(f"  URL: {product_details.get('url', 'N/A')}")
-        logging.debug(f"  Precio del producto: {price}")
-        logging.debug(f"  Specs extraídas del scraper: {specs}")
-        logging.debug(f"  Requisitos del usuario: {user_requirements}")
-
-        # Criterio 1: Precio
-        max_price = user_requirements.get("max_price")
-        if max_price is not None:
-            if price == 999999 or price > max_price: # También considera si el precio es el valor por defecto
-                logging.debug(f"  Producto {product_details['name']} (Precio: {price}) DESCARTADO: Excede el precio máximo ({max_price}) o precio no disponible.")
-                return -1 # Descartar si excede el precio máximo o si el precio no se pudo parsear
-            price_score = 1 - (price / max_price) if max_price > 0 else 0
-            score += price_score * weights.get("price", 0)
-            logging.debug(f"  Score Precio (max {max_price}): {price_score * weights.get('price', 0)}")
-        elif price != 999999: # Si no hay precio maximo definido, pero el producto tiene precio real
-            # Heurística para preferir precios más bajos si no hay máximo definido
-            # Normalizar en un rango esperado, ej. hasta 2000
-            price_normalized = min(price, 2000) / 2000 
-            score += (1 - price_normalized) * weights.get("price", 0) 
-            logging.debug(f"  Score Precio (sin max): {(1 - price_normalized) * weights.get('price', 0)}")
-
-        # Criterio 2: RAM
-        # Ahora, las specs ya vienen parseadas del scraper
-        product_ram_gb = specs.get('ram_gb')
-        
-        min_ram_gb = user_requirements.get("min_ram_gb")
-        if min_ram_gb is not None and min_ram_gb > 0: # Solo si hay un requisito de RAM mínimo
-            if product_ram_gb is None or product_ram_gb < min_ram_gb:
-                logging.debug(f"  Producto {product_details['name']} (RAM: {product_ram_gb}) DESCARTADO: No cumple con RAM mínima requerida ({min_ram_gb}).")
-                return -1 # Descartar si no cumple con RAM mínima
-            ram_score = (product_ram_gb / min_ram_gb) if min_ram_gb > 0 else 1
-            score += min(ram_score, 1.0) * weights.get("ram", 0) # Normalizar a 1 si es mucho más
-            logging.debug(f"  Score RAM ({product_ram_gb} vs {min_ram_gb}): {min(ram_score, 1.0) * weights.get('ram', 0)}")
-        elif product_ram_gb: # Si no hay requisito mínimo pero el producto tiene RAM
-            score += (product_ram_gb / 32) * weights.get("ram", 0) # Pequeño bonus, normalizar a un valor alto esperado, ej. 32GB
-
-        # Criterio 3: CPU
-        product_cpu_model = specs.get('cpu_model')
-        cpu_brand_req = user_requirements.get("cpu_brand")
-
-        if cpu_brand_req:
-            # Revisa si la marca requerida está en el modelo del producto
-            if product_cpu_model and cpu_brand_req.lower() in product_cpu_model.lower():
-                score += 1 * weights.get("cpu", 0)
-                logging.debug(f"  Score CPU (marca '{cpu_brand_req}' en '{product_cpu_model}'): {1 * weights.get('cpu', 0)}")
-            else:
-                logging.debug(f"  Producto {product_details['name']} (CPU: {product_cpu_model}) DESCARTADO: No coincide con marca de CPU requerida ({cpu_brand_req}).")
-                return -1
-        elif product_cpu_model: # Si no se requiere marca específica pero hay CPU
-             score += 0.5 * weights.get("cpu", 0) # Pequeño bonus por tener CPU
-             logging.debug(f"  Score CPU (generico, '{product_cpu_model}'): {0.5 * weights.get('cpu', 0)}")
-
-
-        # Criterio 4: GPU
-        product_gpu_model = specs.get('gpu_model')
-        gpu_present = bool(product_gpu_model)
-
-        gpu_required = user_requirements.get("gpu_required")
-        if gpu_required is True and not gpu_present:
-            logging.debug(f"  Producto {product_details['name']} DESCARTADO: Se requiere GPU dedicada y no se encontró.")
-            return -1 # Descartar si se requiere GPU y no se encontró
-        
-        if gpu_present:
-            # Si hay una GPU deseada específica, podemos dar más puntaje por coincidencia
-            desired_gpu_keyword = user_requirements.get("desired_gpu_keyword")
-            if desired_gpu_keyword and desired_gpu_keyword.lower() in str(product_gpu_model).lower():
-                score += 2 * weights.get("gpu", 0) # Doble puntaje por coincidencia fuerte
-                logging.debug(f"  Score GPU (coincidencia '{desired_gpu_keyword}' en '{product_gpu_model}'): {2 * weights.get('gpu', 0)}")
-            else:
-                score += 1 * weights.get("gpu", 0) # Puntaje base por tener GPU
-                logging.debug(f"  Score GPU (presente, '{product_gpu_model}'): {1 * weights.get('gpu', 0)}")
-
-        # Criterio 5: Almacenamiento (Storage)
-        product_storage_gb = specs.get('storage_gb')
-        product_storage_type = specs.get('storage_type')
-        
-        min_storage_gb = user_requirements.get("min_storage_gb")
-        if min_storage_gb is not None and min_storage_gb > 0:
-            if product_storage_gb is None or product_storage_gb < min_storage_gb:
-                logging.debug(f"  Producto {product_details['name']} (Almacenamiento: {product_storage_gb}) DESCARTADO: No cumple con almacenamiento mínimo ({min_storage_gb}).")
-                return -1 # Descartar si no cumple con almacenamiento mínimo
-            storage_score = (product_storage_gb / min_storage_gb) if min_storage_gb > 0 else 1
-            score += min(storage_score, 1.0) * weights.get("storage", 0)
-            logging.debug(f"  Score Almacenamiento ({product_storage_gb} vs {min_storage_gb}): {min(storage_score, 1.0) * weights.get('storage', 0)}")
-        elif product_storage_gb:
-            score += (product_storage_gb / 1024) * weights.get("storage", 0) # Normalizar a 1TB
-
-        # Criterio 6: Tienda preferida
-        if user_requirements.get("prefer_store") and product_details.get("store") == user_requirements["prefer_store"]:
-            score += 0.05 # Pequeño bonus por tienda preferida
-            logging.debug(f"  Score Bonus Tienda Preferida: 0.05")
-
-        logging.debug(f"  Producto {product_details['name']} (Computron): Score final: {score}")
-        return score
 
     def get_recommendations(self, user_original_prompt: str, translation_result: dict) -> list:
         logging.info(f"Solicitud del usuario original: '{user_original_prompt}'")
@@ -376,348 +337,33 @@ class RecommendationEngine:
                 'details': {}
             }]
 
-    def _recommend_computer(self, entities, original_prompt): # Añadir original_prompt
-        purpose = entities.get("purpose", [])
-        specs_req = entities.get("specs", {}) # Renombrado para no confundir con specs del producto
-        budget_str = entities.get("budget")
-        modality = entities.get("modality", [])
-
-        # --- POST-PROCESAMIENTO DE ENTIDADES (Asegurar inferencias importantes) ---
-        # Si es para diseño gráfico o gaming, se asume GPU necesaria si no se especifica lo contrario
-        if ("diseño grafico" in purpose or "gaming" in purpose) and specs_req.get("gpu_required") is None:
-            specs_req["gpu_required"] = True
-            entities["specs"]["gpu_required"] = True # Actualizar las entidades originales si es necesario
-
-        # Mapeo de entidades a requisitos de usuario
-        user_requirements = {}
-
-        # Presupuesto
-        max_price = None
-        if budget_str == "bajo":
-            max_price = RECOMMENDATION_THRESHOLDS["low_budget_max_price"]
-        elif budget_str == "medio":
-            max_price = RECOMMENDATION_THRESHOLDS["medium_budget_max_price"]
-        elif budget_str == "alto":
-            max_price = RECOMMENDATION_THRESHOLDS["high_budget_max_price"]
-        if max_price:
-            user_requirements["max_price"] = max_price
-
-        # Propósito y especificaciones
-        user_requirements["min_ram_gb"] = specs_req.get("ram_gb") or 0
-        user_requirements["min_storage_gb"] = specs_req.get("storage_gb") or 0
-        user_requirements["cpu_brand"] = specs_req.get("cpu_brand")
-        user_requirements["gpu_required"] = specs_req.get("gpu_required") # Asumimos True/False directamente de extract_entities
-        user_requirements["desired_gpu_keyword"] = specs_req.get("gpu_model")
-
-        # Ajustes basados en propósito (sobrescribe o añade a specs_req)
-        if "gaming" in purpose:
-            user_requirements["gpu_required"] = True
-            if not user_requirements.get("desired_gpu_keyword") and budget_str == "alto":
-                user_requirements["desired_gpu_keyword"] = RECOMMENDATION_THRESHOLDS["gaming_gpu_min"]
-            user_requirements["min_ram_gb"] = max(user_requirements.get("min_ram_gb", 0), RECOMMENDATION_THRESHOLDS["gaming_ram_min_gb"])
-            user_requirements["min_storage_gb"] = max(user_requirements.get("min_storage_gb", 0), RECOMMENDATION_THRESHOLDS["gaming_storage_min_gb"])
-            user_requirements["weights"] = {"price": 0.15, "ram": 0.15, "cpu": 0.2, "gpu": 0.4, "storage": 0.1} # Más peso a GPU
-        elif "diseño" in purpose or "diseño grafico" in purpose: # Asegurarse de capturar "diseño grafico"
-            user_requirements["min_ram_gb"] = max(user_requirements.get("min_ram_gb", 0), RECOMMENDATION_THRESHOLDS["design_ram_min_gb"])
-            user_requirements["min_storage_gb"] = max(user_requirements.get("min_storage_gb", 0), RECOMMENDATION_THRESHOLDS["design_storage_min_gb"])
-            user_requirements["gpu_required"] = user_requirements.get("gpu_required", True) # Asumir GPU si no se dijo lo contrario
-            user_requirements["weights"] = {"price": 0.2, "ram": 0.3, "cpu": 0.25, "gpu": 0.15, "storage": 0.1}
-        elif "estudio" in purpose or "oficina" in purpose:
-            user_requirements["min_ram_gb"] = max(user_requirements.get("min_ram_gb", 0), RECOMMENDATION_THRESHOLDS["office_ram_min_gb"])
-            user_requirements["min_storage_gb"] = max(user_requirements.get("min_storage_gb", 0), RECOMMENDATION_THRESHOLDS["office_storage_min_gb"])
-            user_requirements["gpu_required"] = False # No requiere GPU dedicada
-            user_requirements["weights"] = {"price": 0.4, "ram": 0.2, "cpu": 0.2, "gpu": 0.05, "storage": 0.15} # Menos peso a GPU
-
-
-        # --- USAR LA NUEVA FUNCIÓN PARA GENERAR LA CONSULTA DE BÚSQUEDA ---
-        search_query = self._generate_search_query("computadora", entities)
-        logging.info(f"Buscando computadoras con la query: '{search_query}' y requisitos: {user_requirements}")
-        # --- FIN DE USO DE LA NUEVA FUNCIÓN ---
-
-        print(f"Buscando computadoras con la query: '{search_query}' y requisitos: {user_requirements}")
-
-        all_detailed_products = []
-        for store_name, scraper_instance in self.scrapers.items():
-            logging.info(f"Scraping en {store_name} para '{search_query}'...")
-            search_results = scraper_instance.search_products(search_query) 
-            
-            if search_results:
-                for i, item_from_list in enumerate(search_results):
-                    # Aquí puedes añadir un log para ver si los productos de Computron están siendo obtenidos en la lista de búsqueda
-                    logging.debug(f"    Item listado {i+1}/{len(search_results)} de {store_name}: {item_from_list['name']} ({item_from_list['url']})")
-
-                    if item_from_list['url'] and item_from_list['url'] != '#':
-                        detailed_product = scraper_instance.parse_product_page(item_from_list['url'])
-                        if detailed_product:
-                            all_detailed_products.append(detailed_product)
-                        time.sleep(random.uniform(0.5, 1.5)) # Ajusta la pausa si es necesario
-                    else:
-                        logging.warning(f"    Advertencia: URL de detalle no válida para '{item_from_list['name']}'. Se omite.")
-            else:
-                logging.info(f"    No se encontraron resultados para '{search_query}' en {store_name}.")
-        
-        logging.info(f"Total de productos detallados recopilados de todas las tiendas: {len(all_detailed_products)}")
-        
-        scored_products = []
-        for product in all_detailed_products:
-            score = self._score_product(product, user_requirements)
-            if score >= 0: # Solo incluir productos que no fueron descartados
-                scored_products.append({'product': product, 'score': score})
-
-        scored_products.sort(key=lambda x: x['score'], reverse=True)
-        
-        # Devolver las mejores 10 recomendaciones (o las que existan)
-        top_recommendations = []
-        if scored_products:
-            for rec in scored_products[:10]: # Mostrar los top 10
-                top_recommendations.append({
-                    'category': 'Computadora',
-                    'description': f"Una excelente opción para tu necesidad: {rec['product']['name']} ({rec['product'].get('store', 'N/A')})",
-                    'details': rec['product'],
-                    'score': rec['score'] 
-                })
-        else:
-            top_recommendations.append({
-                'category': 'Computadora',
-                'description': 'No se encontraron computadoras que cumplan con los criterios en las tiendas.',
-                'details': {}
-            })
-        
-        # Log final de las recomendaciones antes de devolverlas
-        logging.info("--- Recomendaciones finales generadas por _recommend_computer ---")
-        for rec in top_recommendations:
-            logging.info(f"  Categoría: {rec['category']}, Descripción: {rec['description']}, Score: {rec.get('score', 'N/A')}")
-            logging.debug(f"  Detalles completos: {json.dumps(rec['details'], indent=2)}") # Log de detalles completos
-
-        return top_recommendations
-
-    def _recommend_ram(self, entities, original_prompt): # Añadir original_prompt
-        specs = entities["specs"]
-        ram_gb_req = specs.get("ram_gb")
-        
-        # --- USAR LA NUEVA FUNCIÓN PARA GENERAR LA CONSULTA DE BÚSQUEDA ---
-        search_query = self._generate_search_query("memoria_ram", entities)
-        # --- FIN DE USO DE LA NUEVA FUNCIÓN ---
-
-        print(f"Buscando RAM con la query: '{search_query}'")
-        
-        all_products = []
-        for store_name, scraper_instance in self.scrapers.items():
-            print(f"Scraping en {store_name} para '{search_query}'...")
-            search_results = scraper_instance.search_products(search_query)
-            if search_results:
-                # Aquí, para RAM, puedes querer los detalles completos también
-                for i, item_from_list in enumerate(search_results):
-                    # Pausa importante aquí también
-                    time.sleep(random.uniform(1, 2))
-                    detailed_product = scraper_instance.parse_product_page(item_from_list['url'])
-                    if detailed_product:
-                        all_products.append(detailed_product)
-                    
-
-        # Puedes adaptar _score_product para RAM o hacer una lógica de filtrado simple
-        filtered_products = []
-        for prod in all_products:
-            prod_ram_gb = self._parse_ram_info(prod.get('specifications', {}).get('Memoria RAM', prod.get('specifications', {}).get('RAM', '')))
-            if ram_gb_req and prod_ram_gb and prod_ram_gb >= ram_gb_req:
-                filtered_products.append(prod)
-            elif not ram_gb_req: # Si no hay requisito de GB, cualquier RAM sirve
-                filtered_products.append(prod)
-        
-        # Ordenar por precio para accesorios
-        filtered_products.sort(key=lambda x: x.get('price', float('inf')))
-
-        if not filtered_products:
-            return [{
-                'category': 'Memoria RAM',
-                'description': 'No se encontraron módulos de RAM que cumplan con los criterios.',
-                'details': {}
-            }]
-        
-        top_recommendations = []
-        for prod in filtered_products[:10]:
-            top_recommendations.append({
-                'category': 'Memoria RAM',
-                'description': f"Considera este módulo de RAM: {prod['name']}",
-                'details': prod
-            })
-        return top_recommendations
-
-    def _recommend_storage(self, entities, original_prompt): # Añadir original_prompt
-        specs = entities["specs"]
-        storage_gb_req = specs.get("storage_gb")
-        storage_type_req = specs.get("storage_type")
-
-        # --- USAR LA NUEVA FUNCIÓN PARA GENERAR LA CONSULTA DE BÚSQUEDA ---
-        search_query = self._generate_search_query("almacenamiento", entities)
-        # --- FIN DE USO DE LA NUEVA FUNCIÓN ---
-
-        print(f"Buscando almacenamiento con la query: '{search_query}'")
-
-        all_products = []
-        for store_name, scraper_instance in self.scrapers.items():
-            print(f"Scraping en {store_name} para '{search_query}'...")
-            search_results = scraper_instance.search_products(search_query)
-            if search_results:
-                # Aquí, para Almacenamiento, también necesitas los detalles completos
-                for i, item_from_list in enumerate(search_results):
-                    # Pausa importante aquí también
-                    time.sleep(random.uniform(1, 2))
-                    detailed_product = scraper_instance.parse_product_page(item_from_list['url'])
-                    if detailed_product:
-                        all_products.append(detailed_product)
-
-
-        filtered_products = []
-        for prod in all_products:
-            prod_storage_gb, prod_storage_type = self._parse_storage_info(prod.get('specifications', {}).get('Almacenamiento', prod.get('specifications', {}).get('Disco Duro', prod.get('specifications', {}).get('SSD', ''))))
-            
-            meets_gb = True
-            if storage_gb_req and (prod_storage_gb is None or prod_storage_gb < storage_gb_req):
-                meets_gb = False
-            
-            meets_type = True
-            if storage_type_req and prod_storage_type and storage_type_req.lower() not in prod_storage_type.lower():
-                meets_type = False
-            
-            if meets_gb and meets_type:
-                filtered_products.append(prod)
-        
-        filtered_products.sort(key=lambda x: x.get('price', float('inf')))
-
-        if not filtered_products:
-            return [{
-                'category': 'Almacenamiento',
-                'description': 'No se encontraron opciones de almacenamiento.',
-                'details': {}
-            }]
-        
-        top_recommendations = []
-        for prod in filtered_products[:10]:
-            top_recommendations.append({
-                'category': 'Almacenamiento',
-                'description': f"Una buena opción de almacenamiento: {prod['name']}",
-                'details': prod
-            })
-        return top_recommendations
-
-# Para probar directamente el RecommendationEngine
+# --- Bloque de prueba (solo para ejecución directa de este archivo) ---
 if __name__ == '__main__':
-    # Este es solo un ejemplo de cómo se usaría en tu aplicación principal
-    # Las funciones recognize_intent y extract_entities deben existir y funcionar
-    # para que esto tenga sentido.
-
-    # Simular funciones NLP (debes tenerlas implementadas en nlp/intent_recognizer.py y nlp/entity_extractor.py)
-    # y que devuelvan el formato esperado por RecommendationEngine.
-
-    # Ejemplo de cómo podrían ser (si no las tienes completas aún):
-    def mock_recognize_intent(prompt):
-        if "computadora" in prompt.lower() or "laptop" in prompt.lower() or "pc" in prompt.lower():
-            return "computadora"
-        elif "ram" in prompt.lower() or "memoria" in prompt.lower():
-            return "memoria_ram"
-        elif "disco" in prompt.lower() or "almacenamiento" in prompt.lower() or "ssd" in prompt.lower() or "hdd" in prompt.lower():
-            return "almacenamiento"
-        return "desconocido"
-
-    def mock_extract_entities(prompt):
-        entities = {
-            "purpose": [], # gaming, diseño, estudio, oficina
-            "specs": {
-                "ram_gb": None,
-                "storage_gb": None,
-                "storage_type": None, # SSD, HDD
-                "cpu_brand": None, # Intel, AMD
-                "gpu_required": None, # True, False
-                "gpu_model": None # Ej. RTX 3060
-            },
-            "budget": None, # bajo, medio, alto
-            "modality": [] # portatil, escritorio
-        }
+    # Esto es solo para propósitos de prueba y requiere que las claves API de Gemini estén configuradas
+    # en `nlp/entity_extractor.py` y `nlp/gemini_recommender_assistant.py`
+    # y también el `nlp/translation_service.py`
+    try:
+        from nlp.gemini_recommender_assistant import configure_gemini_api_for_recommender
+        from nlp.entity_extractor import configure_gemini_api_for_extractor
+        from nlp.translator import configure_gemini_api_for_translation # Asumiendo que existe
         
-        # Lógica muy básica para extraer entidades (sustituye por tu NLP real)
-        prompt_lower = prompt.lower()
-        if "gaming" in prompt_lower or "juegos" in prompt_lower:
-            entities["purpose"].append("gaming")
-            entities["specs"]["gpu_required"] = True
-        # Asegúrate de que "diseño grafico" se capture como un solo propósito
-        elif "diseño grafico" in prompt_lower: 
-            entities["purpose"].append("diseño grafico") # Cambiado de "diseño" a "diseño grafico"
-            entities["specs"]["gpu_required"] = True # Inferir GPU para diseño
-        elif "estudio" in prompt_lower or "oficina" in prompt_lower:
-            entities["purpose"].append("estudio")
-            entities["specs"]["gpu_required"] = False # No requiere GPU dedicada por defecto
-
-        if "portatil" in prompt_lower or "laptop" in prompt_lower:
-            entities["modality"].append("portatil")
-        elif "escritorio" in prompt_lower or "pc" in prompt_lower:
-            entities["modality"].append("escritorio")
-
-        # RAM
-        ram_match = re.search(r'(\d+)\s*(?:gb|g)\s*(?:de)?\s*ram', prompt_lower)
-        if ram_match:
-            entities["specs"]["ram_gb"] = int(ram_match.group(1))
-
-        # Almacenamiento
-        # Mejorar la extracción de almacenamiento para que no capture RAM
-        storage_match = re.search(r'(\d+)\s*(?:gb|g)(?=\s*(ssd|hdd|nvme|m\.2|tb|disco|solido))', prompt_lower)
-        if storage_match:
-            amount = int(storage_match.group(1))
-            unit = storage_match.group(2)
-            if unit.lower() == 'tb':
-                entities["specs"]["storage_gb"] = amount * 1024 # Convertir TB a GB
-            else:
-                entities["specs"]["storage_gb"] = amount
-            
-        if "ssd" in prompt_lower:
-            entities["specs"]["storage_type"] = "SSD"
-        elif "hdd" in prompt_lower or "disco duro" in prompt_lower:
-            entities["specs"]["storage_type"] = "HDD"
-        elif "nvme" in prompt_lower:
-            entities["specs"]["storage_type"] = "NVMe SSD"
-
-
-        # CPU Brand (ej. "intel i5", "amd ryzen")
-        if "intel" in prompt_lower:
-            entities["specs"]["cpu_brand"] = "Intel"
-        elif "amd" in prompt_lower:
-            entities["specs"]["cpu_brand"] = "AMD"
-
-        # GPU Model (ej. "rtx 3060", "gtx 1650")
-        gpu_model_match = re.search(r'(rtx\s*\d{3,4}(?:[a-z]{0,2})?|gtx\s*\d{3,4}(?:[a-z]{0,2})?|radeon\s*rx\s*\d{3,4}|intel\s*iris\s*xe|uhd\s*graphics)', prompt_lower)
-        if gpu_model_match:
-            entities["specs"]["gpu_model"] = gpu_model_match.group(0).strip().upper()
-            entities["specs"]["gpu_required"] = True # Si se menciona un modelo, se asume que se requiere
-
-        # Presupuesto
-        if "barato" in prompt_lower or "económico" in prompt_lower or "bajo presupuesto" in prompt_lower:
-            entities["budget"] = "bajo"
-        elif "medio" in prompt_lower or "presupuesto medio" in prompt_lower:
-            entities["budget"] = "medio"
-        elif "caro" in prompt_lower or "alto presupuesto" in prompt_lower:
-            entities["budget"] = "alto"
-
-        return entities
-
-    # Guarda las funciones originales de nlp
-    original_recognize_intent = recognize_intent
-    original_extract_entities = extract_entities
-
-    # Sobreescribir las funciones reales con los mocks para la prueba local del engine
-    # Esto SOLO afecta el bloque if __name__ == '__main__':
-    recognize_intent = mock_recognize_intent
-    extract_entities = mock_extract_entities
-
+        configure_gemini_api_for_recommender()
+        configure_gemini_api_for_extractor()
+        configure_gemini_api_for_translation() # Asegura que la traducción también esté configurada
+        logging.info("APIs de Gemini configuradas para pruebas.")
+    except Exception as e:
+        logging.warning(f"No se pudieron configurar las APIs de Gemini para pruebas: {e}. Las pruebas pueden fallar.")
 
     engine = RecommendationEngine()
 
-    # Pruebas con prompts de usuario
     prompts = [
-        "Quiero una laptop gaming con 16GB de RAM y una RTX 3060, con presupuesto medio.",
-        "Necesito una computadora para oficina, algo básico y económico.",
-        "Recomiéndame una memoria RAM de 8GB.",
-        "Busco un disco duro SSD de 500GB.",
-        "Laptop para diseño gráfico, con al menos 32GB de RAM."
+        "Laptop para diseño gráfico, con al menos 32GB de RAM.",
+        "Busco una computadora para gaming, que tenga una NVIDIA RTX.",
+        "Necesito una laptop económica para estudiar.",
+        "PC de escritorio para programación con 16GB de RAM y 512GB SSD.",
+        "Quiero una laptop con un presupuesto de 1000 a 1500 dólares.",
+        "Dime la mejor laptop para el trabajo, con un Intel Core i7.",
+        "Busco una computadora potente y barata."
     ]
 
     for prompt in prompts:
@@ -740,10 +386,6 @@ if __name__ == '__main__':
                     print(f"    Especificaciones: {details.get('specifications', 'N/A')}")
                     print(f"    Score: {rec.get('score', 'N/A'):.2f}" if 'score' in rec else "")
                 else:
-                    print("    No se encontraron detalles específicos.")
+                    print("    No se encontraron detalles específicos (posiblemente un consejo de experto).")
         else:
             print("No se pudieron generar recomendaciones.")
-
-    # Restaura las funciones originales de nlp después de la prueba
-    recognize_intent = original_recognize_intent
-    extract_entities = original_extract_entities

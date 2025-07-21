@@ -101,8 +101,6 @@ h1, h2, h3 {
     margin-top: 10px;
 }
 
-/* static/style.css */
-/* ... (tu CSS existente) ... */
 
 .gemini-advice {
     background-color: #e9f7ef; /* Un color suave para el fondo */
@@ -210,88 +208,4 @@ h1, h2, h3 {
     margin-bottom: 20px;
     text-align: center;
     font-weight: bold;
-}
-
-.general-advice-card {
-    background-color: #e6f7ff; /* Un azul claro */
-    border: 1px solid #91d5ff;
-    border-left: 5px solid #1890ff; /* Borde más pronunciado a la izquierda */
-    padding: 20px;
-    margin-bottom: 30px;
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-}
-
-.general-advice-card h3 {
-    color: #1890ff;
-    margin-top: 0;
-    margin-bottom: 10px;
-    text-align: left; /* Alineado a la izquierda para el título del consejo */
-}
-
-.general-advice-card p {
-    font-size: 1.1em;
-    line-height: 1.8;
-    color: #333;
-}
-
-.product-list {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); /* Columnas responsivas */
-    gap: 20px;
-}
-
-.recommendation-card {
-    background-color: #f9f9f9;
-    border: 1px solid #e0e0e0;
-    border-radius: 8px;
-    padding: 20px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
-    transition: transform 0.2s ease-in-out;
-    display: flex;
-    flex-direction: column; /* Organiza el contenido en columna */
-    justify-content: space-between; /* Espacia el contenido */
-}
-
-.recommendation-card:hover {
-    transform: translateY(-5px);
-}
-
-.recommendation-card h4 {
-    color: #007bff;
-    margin-top: 0;
-    margin-bottom: 10px;
-    font-size: 1.2em;
-    text-align: left;
-}
-
-.recommendation-card p {
-    font-size: 0.95em;
-    margin-bottom: 8px;
-}
-
-.recommendation-card p strong {
-    color: #555;
-}
-
-.recommendation-card .store {
-    font-style: italic;
-    color: #666;
-}
-
-.recommendation-card .product-link {
-    display: inline-block;
-    background-color: #28a745; /* Un verde vibrante */
-    color: white;
-    padding: 8px 15px;
-    border-radius: 5px;
-    text-decoration: none;
-    font-weight: bold;
-    margin-top: 15px;
-    transition: background-color 0.3s ease;
-    align-self: flex-start; /* Alinea el botón a la izquierda */
-}
-
-.recommendation-card .product-link:hover {
-    background-color: #218838;
 }
