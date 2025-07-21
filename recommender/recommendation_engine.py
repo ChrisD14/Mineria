@@ -15,14 +15,15 @@ from nlp.translator import translate_text_to_english # Asumiendo que esta funci�
 
 from scrapers.la_ganga import LaGangaScraper
 from scrapers.computron import ComputronScraper
+from scrapers.novicompu import NovicompuScraper
 from config import RECOMMENDATION_THRESHOLDS 
 
 class RecommendationEngine:
     def __init__(self):
         self.scrapers = {
-            #"la_ganga": LaGangaScraper(),
+            "la_ganga": LaGangaScraper(),
             "computron": ComputronScraper(),
-            # Agrega otros scrapers aquí
+            "novicompu": NovicompuScraper(),
         }
         # Puedes añadir un mapeo de propósito a requisitos mínimos aquí
         self.purpose_requirements = {
