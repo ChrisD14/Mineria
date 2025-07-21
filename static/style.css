@@ -1,0 +1,297 @@
+/* static/style.css */
+body {
+    font-family: 'Arial', sans-serif;
+    background-color: #f4f7f6;
+    color: #333;
+    line-height: 1.6;
+    margin: 0;
+    padding: 20px;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100vh;
+}
+
+.container {
+    background-color: #fff;
+    padding: 30px;
+    border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    max-width: 800px;
+    width: 100%;
+}
+
+h1, h2, h3 {
+    color: #0056b3;
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.recommendation-form {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 30px;
+}
+
+.recommendation-form label {
+    margin-bottom: 8px;
+    font-weight: bold;
+}
+
+.recommendation-form textarea {
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    font-size: 16px;
+    margin-bottom: 15px;
+    resize: vertical;
+}
+
+.recommendation-form button {
+    background-color: #007bff;
+    color: white;
+    padding: 12px 20px;
+    border: none;
+    border-radius: 5px;
+    font-size: 18px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+.recommendation-form button:hover {
+    background-color: #0056b3;
+}
+
+.results {
+    border-top: 2px solid #eee;
+    padding-top: 20px;
+}
+
+.recommendation-card {
+    background-color: #e9f5ff;
+    border: 1px solid #cce5ff;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 15px;
+}
+
+.recommendation-card h3 {
+    color: #004085;
+    margin-top: 0;
+    text-align: left;
+}
+
+.recommendation-card p {
+    margin-bottom: 5px;
+}
+
+.recommendation-card a {
+    color: #007bff;
+    text-decoration: none;
+}
+
+.recommendation-card a:hover {
+    text-decoration: underline;
+}
+
+.recommendation-card .store {
+    font-size: 0.9em;
+    color: #666;
+    text-align: right;
+    margin-top: 10px;
+}
+
+/* static/style.css */
+/* ... (tu CSS existente) ... */
+
+.gemini-advice {
+    background-color: #e9f7ef; /* Un color suave para el fondo */
+    border: 1px solid #d4edda;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 30px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.gemini-advice h2 {
+    color: #28a745; /* Un color verde para el título */
+    text-align: center;
+    margin-bottom: 15px;
+}
+
+.gemini-advice p {
+    font-size: 1.1em;
+    line-height: 1.7;
+    color: #333;
+}
+
+/* Estilo para las tarjetas de recomendación individuales */
+.recommendation-card {
+    background-color: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.recommendation-card h3 {
+    color: #007bff;
+    margin-top: 0;
+    margin-bottom: 10px;
+    text-align: left;
+}
+
+.recommendation-card p {
+    margin-bottom: 8px;
+    font-size: 0.95em;
+}
+
+.recommendation-card p.store {
+    font-style: italic;
+    color: #666;
+}
+
+.recommendation-card a {
+    color: #007bff;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+.recommendation-card a:hover {
+    text-decoration: underline;
+}
+
+.specs-summary {
+    background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 5px;
+    padding: 10px 15px;
+    margin-top: 10px;
+    width: 100%;
+}
+
+.specs-summary ul {
+    list-style-type: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 5px;
+}
+
+.specs-summary li {
+    font-size: 0.9em;
+    color: #555;
+}
+
+.product-image-container {
+    width: 100%;
+    text-align: center;
+    margin-top: 15px;
+}
+
+.product-thumbnail {
+    max-width: 150px; /* Ajusta el tamaño de la imagen */
+    height: auto;
+    border-radius: 5px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.error-message {
+    background-color: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+    border-radius: 5px;
+    padding: 15px;
+    margin-bottom: 20px;
+    text-align: center;
+    font-weight: bold;
+}
+
+.general-advice-card {
+    background-color: #e6f7ff; /* Un azul claro */
+    border: 1px solid #91d5ff;
+    border-left: 5px solid #1890ff; /* Borde más pronunciado a la izquierda */
+    padding: 20px;
+    margin-bottom: 30px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.general-advice-card h3 {
+    color: #1890ff;
+    margin-top: 0;
+    margin-bottom: 10px;
+    text-align: left; /* Alineado a la izquierda para el título del consejo */
+}
+
+.general-advice-card p {
+    font-size: 1.1em;
+    line-height: 1.8;
+    color: #333;
+}
+
+.product-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); /* Columnas responsivas */
+    gap: 20px;
+}
+
+.recommendation-card {
+    background-color: #f9f9f9;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+    transition: transform 0.2s ease-in-out;
+    display: flex;
+    flex-direction: column; /* Organiza el contenido en columna */
+    justify-content: space-between; /* Espacia el contenido */
+}
+
+.recommendation-card:hover {
+    transform: translateY(-5px);
+}
+
+.recommendation-card h4 {
+    color: #007bff;
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 1.2em;
+    text-align: left;
+}
+
+.recommendation-card p {
+    font-size: 0.95em;
+    margin-bottom: 8px;
+}
+
+.recommendation-card p strong {
+    color: #555;
+}
+
+.recommendation-card .store {
+    font-style: italic;
+    color: #666;
+}
+
+.recommendation-card .product-link {
+    display: inline-block;
+    background-color: #28a745; /* Un verde vibrante */
+    color: white;
+    padding: 8px 15px;
+    border-radius: 5px;
+    text-decoration: none;
+    font-weight: bold;
+    margin-top: 15px;
+    transition: background-color 0.3s ease;
+    align-self: flex-start; /* Alinea el botón a la izquierda */
+}
+
+.recommendation-card .product-link:hover {
+    background-color: #218838;
+}

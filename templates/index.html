@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TechAdvisor EC</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>TechAdvisor EC</h1>
+        <p>Tu asistente para encontrar la tecnología perfecta en Ecuador.</p>
+
+        <form action="/recommend" method="POST" class="recommendation-form">
+            <label for="prompt">¿Qué tipo de tecnología necesitas y para qué?</label>
+            <textarea id="prompt" name="prompt" rows="4" placeholder="Ej: Necesito una computadora para estudiar ingeniería en diseño." required>{{ user_prompt if user_prompt else '' }}</textarea>
+            <button type="submit">Obtener Recomendación</button>
+        </form>
+
+        {% if error %}
+            <div class="error-message">
+                <p>{{ error }}</p>
+            </div>
+        {% endif %}
+
+        {# Nueva sección para la recomendación experta de Gemini #}
+        {% if gemini_expert_advice %}
+            <div class="gemini-advice">
+                <h2>Consejo de nuestro Experto en Tecnología</h2>
+                <p>{{ gemini_expert_advice | safe }}</p> {# Usar 'safe' si el contenido puede tener HTML y confías en él #}
+            </div>
+        {% endif %}
+
+        {% if recommendations %}
+            <div class="results">
+                <h2>Laptops encontradas para: "{{ user_prompt }}"</h2>
+                {% if recommendations[0].category == 'Error' or "No se encontraron computadoras" in recommendations[0].description %}
+                    <p>{{ recommendations[0].description }}</p>
+                {% else %}
+                    {% for rec in recommendations %}
+                        <div class="recommendation-card">
+                            <h3>{{ rec.category }}</h3>
+                            <p>{{ rec.description }}</p>
+                            {% if rec.details %}
+                                <p><strong>Producto Sugerido:</strong> <a href="{{ rec.details.url }}" target="_blank">{{ rec.details.name }}</a></p>
+                                <p><strong>Precio Estimado:</strong> {{ "No disponible" if rec.details.price is none else "$%.2f" % rec.details.price }}</p>
+                                <p class="store">Tienda: {{ rec.details.store }}</p>
+                                <div class="specs-summary">
+                                    <p><strong>Specs:</strong></p>
+                                    <ul>
+                                        {% if rec.details.specifications.ram_gb %}<li>RAM: {{ rec.details.specifications.ram_gb }}GB</li>{% endif %}
+                                        {% if rec.details.specifications.storage_gb %}<li>Almacenamiento: {{ rec.details.specifications.storage_gb }}GB {{ rec.details.specifications.storage_type }}</li>{% endif %}
+                                        {% if rec.details.specifications.cpu_model %}<li>CPU: {{ rec.details.specifications.cpu_model }}</li>{% endif %}
+                                        {% if rec.details.specifications.gpu_model %}<li>GPU: {{ rec.details.specifications.gpu_model }}</li>{% endif %}
+                                    </ul>
+                                </div>
+                                {% if rec.details.image_url and rec.details.image_url != '#' %}
+                                    <div class="product-image-container">
+                                        <img src="{{ rec.details.image_url }}" alt="{{ rec.details.name }}" class="product-thumbnail">
+                                    </div>
+                                {% endif %}
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            </div>
+        {% endif %}
+    </div>
+</body>
+</html>
