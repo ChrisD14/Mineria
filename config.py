@@ -67,26 +67,49 @@ STORE_SELECTORS = {
         "product_description_text": "div.woocommerce-Tabs-panel--description.panel.entry-content.wc-tab p", # El <p> dentro del div de descripción
                                     
     },
-    "novicompu": {
-        "listing_product_card": "a.vtex-product-summary-2-x-clearLink", # Este <a> es ahora la "tarjeta" principal
+     "novicompu": {
+        "base_url": "https://www.novicompu.com",
+        "search_url_format": "https://www.novicompu.com/{}?_q={}&map=ft",
 
-        # Los selectores internos ahora deben ser relativos a este <a>, y lo que antes era la "card"
-        # (el <article>) ahora es un elemento anidado dentro de este <a>.
-        "listing_product_name": "article span.vtex-product-summary-2-x-productBrand", # El nombre está dentro del <article> que a su vez está dentro del <a>
-        "listing_product_url": "", # Ya no necesita selector aquí, ya que la URL se obtiene directamente del 'href' del listing_product_card (el <a>)
-        "listing_product_image": "article img.vtex-product-summary-2-x-image", # La imagen también está dentro del <article>
-        "listing_product_price": "article span.vtex-product-price-1-x-sellingPrice", # El precio también está dentro del <article>
+        # Selectores para PÁGINA DE LISTADO (resultados de búsqueda)
+        "listing_product_link_card": "a.vtex-product-summary-2-x-clearLink", # Este es el elemento principal iterable (el enlace <a>)
+        "listing_product_article_inside_link": "article.vtex-product-summary-2-x-element", # El <article> DENTRO del enlace <a>
+        "listing_product_name": "div.vtex-product-summary-2-x-nameContainer", # Relativo al <article>
+        "listing_product_image": "img.vtex-product-summary-2-x-image", # Relativo al <article>
+        "listing_product_price": "span.vtex-product-price-1-x-sellingPrice", # Relativo al <article>
+        "wait_for_listing_product_card": "a.vtex-product-summary-2-x-clearLink", # Esperar a que aparezca el enlace principal del producto
 
-        # Selectores para PÁGINA DE DETALLE DE PRODUCTO (!!! NECESITAN CONFIRMACIÓN MANUAL EN LA PÁGINA DE DETALLE !!!)
-        # Estos son selectores comunes en tiendas VTEX para las páginas de detalle.
-        # Es FUNDAMENTAL que los verifiques manualmente en una página de producto individual en Novicompu.com.
-        "product_name": "span.vtex-store-components-3-x-productBrand",
-        "product_price": "span.vtex-product-price-1-x-currencyContainer",
-        "product_image": "img.vtex-store-components-3-x-productImageTag",
-        "product_overview_container": "div.vtex-store-components-3-x-productDescriptionText",
-        "product_description_text": "div.vtex-store-components-3-x-productDescription p",
-        "product_specifications_table": "table.vtex-store-components-3-x-specificationsTable",
+        # Selectores para PÁGINA DE DETALLE DE PRODUCTO
+        "product_name": "h1.vtex-store-components-3-x-productBrand", # Basado en tu log y estructura VTEX común
+        "product_price": "div.vtex-store-components-3-x-sellingPrice", # El DIV padre que contiene el precio
+        "product_image": "img.vtex-store-components-3-x-productImageTag", # Selector de imagen común en páginas de detalle VTEX
+        "product_description_container": "div.vtex-store-components-3-x-description", # Contenedor de descripción VTEX común
+        "product_description_text": "div.vtex-store-components-3-x-description p", # Párrafos dentro de la descripción
+        "product_specifications_table": "table.vtex-store-components-3-x-specificationsTable", # Si existe una tabla de especificaciones
+        "wait_for_product_name": "span.vtex-store-components-13-x-productBrand", # Esperar por el nombre del producto
+        "wait_for_product_price": "span.vtex-product-price-11-x-sellingPrice" # Esperar por la visibilidad del contenedor del precio
     },
+    "mobilestore": {
+        "base_url": "https://mobilestore.ec",
+        "wait_for_listing_product_card": "article.product",
+        "wait_for_product_name": "h1.product_title.entry-title",
+
+        # Selectores para la página de búsqueda (listado de productos)
+        "listing_product_card": "article.product",
+        "listing_product_link": "a.woocommerce-LoopProduct-link, a.image-result",
+        "listing_product_name": "h2.entry-title, h2.woocommerce-loop-product__title",
+        "listing_product_image": "a.image-result img, img.wp-post-image, article.product img",
+        "listing_product_price": None, # <<--- CRUCIAL: No se espera el precio en la lista
+
+        # Selectores para la página de detalle del producto
+        "product_name": "h1.product_title.entry-title",
+        # Selector de precio más específico para la página de detalle, basado en image_b7821f.png
+        "product_price": "p.price ins",
+        "product_image": "div.woocommerce-product-gallery__image img, .wp-post-image",
+        "product_description_container": "div.woocommerce-product-details__short-description, div.woocommerce-tabs #tab-description",
+        "product_description_text": "p",
+        "product_specifications_table": "table.woocommerce-product-attributes", # No se ve en las últimas imágenes, pero lo mantenemos por si acaso.
+    }
 }
 
 # Umbrales para recomendaciones de computadoras

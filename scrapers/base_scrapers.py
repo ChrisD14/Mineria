@@ -43,10 +43,6 @@ class BaseScraper(ABC):
             logging.info("WebDriver de Chrome inicializado.")
 
     def _fetch_page(self, url, use_selenium=False, wait_for_selector=None, timeout=30):
-        """
-        Método interno para obtener el HTML de una URL.
-        Puede usar requests o Selenium/Playwright si use_selenium es True.
-        """
         if use_selenium:
             self._initialize_selenium_driver() # Asegurarse de que el driver esté listo
             try:
@@ -127,10 +123,6 @@ class BaseScraper(ABC):
         return specs
 
     def _extract_specs_from_text(self, text):
-        """
-        Extrae especificaciones clave (RAM, Almacenamiento, Procesador, GPU)
-        de un bloque de texto libre como una descripción, utilizando expresiones regulares.
-        """
         specs = {}
         full_text = text.lower() # Trabajar con minúsculas para la búsqueda
 
@@ -208,6 +200,47 @@ class BaseScraper(ABC):
         Debe ser implementado por cada scraper específico de tienda.
         """
         pass
+
+    def _fetch_page_with_selenium(self, url, wait_for_selector=None):
+        """
+        Obtiene el contenido de una página web usando Selenium.
+        Útil para sitios que cargan contenido dinámicamente con JavaScript.
+        """
+        logging.info(f"[BaseScraper] Usando Selenium para obtener: {url}")
+        if not self.driver:
+            logging.info("Inicializando WebDriver de Chrome...")
+            try:
+                # Opciones de Chrome para headless mode y evitar problemas
+                chrome_options = Options()
+                chrome_options.add_argument("--headless")  # Ejecutar en segundo plano sin UI
+                chrome_options.add_argument("--no-sandbox")
+                chrome_options.add_argument("--disable-dev-shm-usage")
+                chrome_options.add_argument("--disable-gpu")
+                chrome_options.add_argument("--window-size=1920,1080")
+                chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+                service = Service(ChromeDriverManager().install())
+                self.driver = webdriver.Chrome(service=service, options=chrome_options)
+                logging.info("WebDriver de Chrome inicializado.")
+            except Exception as e:
+                logging.error(f"Error al inicializar WebDriver de Chrome: {e}", exc_info=True)
+                return None
+        
+        try:
+            self.driver.get(url)
+            if wait_for_selector:
+                logging.info(f"[BaseScraper] Esperando selector: {wait_for_selector}")
+                WebDriverWait(self.driver, 20).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, wait_for_selector))
+                )
+            
+            # Obtener el HTML después de que la página se haya cargado completamente
+            soup = BeautifulSoup(self.driver.page_source, 'html.parser')
+            logging.info(f"Página {url} fetched con Selenium y parseada exitosamente.")
+            return soup
+        except Exception as e:
+            logging.error(f"Error al obtener o parsear la página con Selenium: {url} - {e}", exc_info=True)
+            return None
 
 # --- Bloque de prueba (solo para ejecución directa de este archivo, no se ejecuta normalmente) ---
 if __name__ == '__main__':

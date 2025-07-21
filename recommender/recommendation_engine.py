@@ -16,6 +16,7 @@ from nlp.translator import translate_text_to_english # Asumiendo que esta funci�
 from scrapers.la_ganga import LaGangaScraper
 from scrapers.computron import ComputronScraper
 from scrapers.novicompu import NovicompuScraper
+from scrapers.mobilestore import MobilestoreScraper
 from config import RECOMMENDATION_THRESHOLDS 
 
 class RecommendationEngine:
@@ -24,6 +25,7 @@ class RecommendationEngine:
             "la_ganga": LaGangaScraper(),
             "computron": ComputronScraper(),
             "novicompu": NovicompuScraper(),
+            "mobilestore": MobilestoreScraper(),
         }
         # Puedes añadir un mapeo de propósito a requisitos mínimos aquí
         self.purpose_requirements = {
