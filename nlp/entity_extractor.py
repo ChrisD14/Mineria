@@ -20,7 +20,7 @@ def extract_entities(user_prompt: str) -> dict:
 
     model = genai.GenerativeModel('models/gemini-2.0-flash-001')
     prompt = f"""
-    Extract the following entities from the user's prompt: purpose (e.g., graphic_design, gaming, office, programming, studying, general_use), specs (ram_gb, storage_gb, storage_type (SSD, HDD, NVMe), cpu_brand (Intel, AMD, Apple), gpu_required (boolean), gpu_model), budget (low, medium, high), modality (laptop, desktop), min_price, max_price.
+    Extract the following entities from the user's prompt. For specs, include ram_gb, storage_gb, storage_type (SSD, HDD, NVMe), cpu_brand (Intel, AMD, Apple), gpu_required (boolean, or null if not explicitly specified), gpu_model. Also extract budget (low, medium, high), modality (laptop, desktop), min_price, max_price.
 
     User prompt: "{user_prompt}"
 
@@ -52,16 +52,10 @@ def extract_entities(user_prompt: str) -> dict:
 
         # --- MODIFICACIÓN CLAVE AQUÍ: Limpiar la respuesta de Gemini ---
         if gemini_raw_text.startswith('```json') and gemini_raw_text.endswith('```'):
-            gemini_raw_text = gemini_raw_text[7:-3].strip() # Elimina '```json' y '```'
-        # -----------------------------------------------------------
+            gemini_raw_text = gemini_raw_text[7:-3].strip() 
 
         extracted_data = json.loads(gemini_raw_text)
 
-        # Mapeo y validación de los datos extraídos
-        # ... (el resto de tu lógica de mapeo de entidades sigue aquí) ...
-
-        # Tu lógica existente para procesar `extracted_data` e `initial_entities_structure`
-        # Deberías tener algo como esto para actualizar `entities` con los valores de `extracted_data`
         entities = initial_entities_structure.copy()
 
         if "purpose" in extracted_data and isinstance(extracted_data["purpose"], list):

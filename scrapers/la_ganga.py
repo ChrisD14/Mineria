@@ -77,10 +77,6 @@ class LaGangaScraper(BaseScraper):
         description_elem = soup.select_one(self.selectors["product_description_text"])
         product_details['description'] = description_elem.text.strip() if description_elem else "Sin descripción detallada."
 
-        # --- Implementación de _parse_specifications (debes adaptarla) ---
-        # Este es un ejemplo general. Necesitarás inspeccionar el HTML
-        # de una página de producto en La Ganga para encontrar dónde están las especificaciones.
-        # Podrían estar en una tabla, lista, o simplemente en el texto de la descripción.
         specs = self._parse_specifications(soup, product_details['name'], product_details['description'])
         product_details['specifications'] = specs
         # -----------------------------------------------------------------

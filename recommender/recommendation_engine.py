@@ -17,6 +17,7 @@ from scrapers.la_ganga import LaGangaScraper
 from scrapers.computron import ComputronScraper
 from scrapers.novicompu import NovicompuScraper
 from scrapers.mobilestore import MobilestoreScraper
+from scrapers.bestcell import BestcellScraper
 from config import RECOMMENDATION_THRESHOLDS 
 
 class RecommendationEngine:
@@ -26,6 +27,7 @@ class RecommendationEngine:
             "computron": ComputronScraper(),
             "novicompu": NovicompuScraper(),
             "mobilestore": MobilestoreScraper(),
+            "bestcell": BestcellScraper(),
         }
         # Puedes añadir un mapeo de propósito a requisitos mínimos aquí
         self.purpose_requirements = {
@@ -95,6 +97,16 @@ class RecommendationEngine:
         logging.info(f"Query de búsqueda generada: '{search_query}'")
         return search_query.strip()
     
+    def _get_specs(self, details: dict) -> dict:
+        specs = details.get("specifications")
+        if isinstance(specs, dict) and specs:
+            return specs
+        fallback = {}
+        for k in ("ram_gb", "storage_gb", "storage_type", "cpu_brand", "gpu_required", "gpu_model"):
+            if k in details:
+                fallback[k] = details[k]
+        return fallback
+
     def _recommend_computer(self, entities: dict, user_original_prompt: str) -> list:
         # Aquí consolidamos los requisitos del usuario
         # Inicializamos los requisitos con valores que no restrinjan si no se especifican

@@ -13,6 +13,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
+from selenium.common.exceptions import TimeoutException, NoSuchElementException # Importa NoSuchElementException
 
 # Configura el logger para que puedas ver los mensajes de depuración
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -42,41 +43,40 @@ class BaseScraper(ABC):
             self.driver = webdriver.Chrome(service=service, options=chrome_options)
             logging.info("WebDriver de Chrome inicializado.")
 
-    def _fetch_page(self, url, use_selenium=False, wait_for_selector=None, timeout=30):
-        if use_selenium:
-            self._initialize_selenium_driver() # Asegurarse de que el driver esté listo
+    def _fetch_page(self, url, use_selenium=False, wait_for_selector=None, selenium_timeout=4):
+        if not use_selenium:
+            logging.info(f"Página {url} fetched con requests.")
             try:
-                logging.info(f"[{self.__class__.__name__}] Usando Selenium para obtener: {url}")
-                self.driver.get(url)
-
-                # Esperar a que un selector específico esté presente (para contenido JS)
-                if wait_for_selector:
-                    logging.info(f"[{self.__class__.__name__}] Esperando selector: {wait_for_selector}")
-                    WebDriverWait(self.driver, timeout).until(
-                        EC.presence_of_element_located((By.CSS_SELECTOR, wait_for_selector))
-                    )
-
-                # Esperar un poco más para asegurar que todo el JS haya cargado
-                time.sleep(random.uniform(2, 4)) 
-
-                soup = BeautifulSoup(self.driver.page_source, 'html.parser')
-                logging.info(f"Página {url} fetched con Selenium y parseada exitosamente.")
-                return soup
-            except Exception as e:
-                logging.error(f"Error al obtener la página con Selenium: {e}", exc_info=True)
-                # Considerar cerrar el driver si hay un error fatal, o reintentar
-                return None
-        else:
-            try:
-                time.sleep(random.uniform(1, 3)) # Pausa para evitar ser bloqueado
-                logging.info(f"Fetching URL: {url}")
-                response = self.session.get(url, headers=self.headers, timeout=10)
-                response.raise_for_status() # Lanza un error para códigos de estado HTTP malos
+                response = self.session.get(url, headers=self.headers, timeout=15)
+                response.raise_for_status()
                 soup = BeautifulSoup(response.text, 'html.parser')
-                logging.info(f"Página {url} fetched y parseada exitosamente.")
+                logging.info(f"Página {url} fetched y parseada exitosamente con requests.")
                 return soup
             except requests.exceptions.RequestException as e:
                 logging.error(f"Error al obtener la página con requests: {e}", exc_info=True)
+                return None
+        else:
+            if not self.driver:
+                self._initialize_selenium_driver()
+            if self.driver is None:
+                logging.error(f"No se pudo inicializar el driver de Selenium. No se puede obtener la página: {url}")
+                return None
+            try:
+                logging.info(f"[{self.__class__.__name__}] Usando Selenium para obtener: {url}")
+                self.driver.get(url)
+                if wait_for_selector:
+                    logging.info(f"[{self.__class__.__name__}] Esperando selector: '{wait_for_selector}' con timeout de {selenium_timeout} segundos.")
+                    WebDriverWait(self.driver, selenium_timeout).until( # <<-- ¡VERIFICA ESTA LÍNEA!
+                        EC.presence_of_element_located((By.CSS_SELECTOR, wait_for_selector))
+                    )
+                soup = BeautifulSoup(self.driver.page_source, 'html.parser')
+                logging.info(f"Página {url} fetched con Selenium y parseada exitosamente.")
+                return soup
+            except TimeoutException as e:
+                logging.error(f"Error al obtener la página con Selenium (Timeout después de {selenium_timeout}s): {e}", exc_info=True)
+                return None
+            except Exception as e:
+                logging.error(f"Error al obtener la página con Selenium: {e}", exc_info=True)
                 return None
             
     def _clean_price(self, price_text):

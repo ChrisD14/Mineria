@@ -52,25 +52,25 @@ class NovicompuScraper(BaseScraper):
                 
                 # Obtener la URL del producto directamente del atributo href del <a>
                 product_url = link_element.get('href')
-                if product_url and product_url.startswith('/'): # Hacer la URL absoluta si es relativa
+                if product_url and product_url.startswith('/'):
                     product_url = self.base_url + product_url
 
-                # Ahora, encontrar el elemento <article> dentro de este enlace <a>
-                article_element = link_element.select_one(self.selectors["listing_product_article_inside_link"])
+                # Al estar el <article> dentro del <a>, usamos eso para seguir extrayendo datos
+                article_element = link_element.select_one("article.vtex-product-summary-2-x-element")
 
                 if article_element:
-                    # Extraer el nombre relativo al <article>
-                    name_element = article_element.select_one(self.selectors["listing_product_name"])
+                    # Nombre
+                    name_element = article_element.select_one("div.vtex-product-summary-2-x-nameContainer, h1.vtex-store-components-3-x-productNameContainer")
                     if name_element:
                         name = name_element.get_text(strip=True)
 
-                    # Extraer la imagen relativa al <article>
-                    image_element = article_element.select_one(self.selectors["listing_product_image"])
+                    # Imagen
+                    image_element = article_element.select_one("img.vtex-product-summary-2-x-image")
                     if image_element:
-                        image_url = image_element.get('src') or image_element.get('data-src')
+                        image_url = image_element.get("src") or image_element.get("data-src")
 
-                    # Extraer el precio relativo al <article>
-                    price_element = article_element.select_one(self.selectors["listing_product_price"])
+                    # Precio
+                    price_element = article_element.select_one("span.vtex-product-price-1-x-sellingPrice")
                     if price_element:
                         price_text = price_element.get_text(strip=True)
                         price = self._clean_price(price_text)
@@ -116,7 +116,7 @@ class NovicompuScraper(BaseScraper):
                 try:
                     # Esperar a que el contenedor del precio sea visible
                     logging.info(f"[{self.store_name}] Esperando que el contenedor del precio sea visible con selector: {self.selectors['wait_for_product_price']}")
-                    WebDriverWait(self.driver, 15).until( # Tiempo de espera más corto para visibilidad
+                    WebDriverWait(self.driver, 3).until( # Tiempo de espera más corto para visibilidad
                         EC.visibility_of_element_located((By.CSS_SELECTOR, self.selectors["wait_for_product_price"]))
                     )
 
@@ -153,11 +153,11 @@ class NovicompuScraper(BaseScraper):
 
                     # Espera principal para que el precio se cargue y sea válido
                     logging.info(f"[{self.store_name}] Esperando que el precio tenga un valor válido...")
-                    WebDriverWait(self.driver, 30).until(price_has_valid_text) # Tiempo de espera más largo para el valor del precio
+                    WebDriverWait(self.driver, 3).until(price_has_valid_text) # Tiempo de espera más largo para el valor del precio
                     
                     # Una vez que la condición se cumple, obtener el texto final del precio del elemento web
                     final_price_element = self.driver.find_element(By.CSS_SELECTOR, self.selectors["product_price"])
-                    price_text_final = final_price_element.get_text(strip=True)
+                    price_text_final = final_price_element.text.strip()
                     price = self._clean_price(price_text_final)
                     logging.info(f"[{self.store_name}] Precio encontrado y válido. Texto crudo: '{price_text_final}', Limpio: {price}")
 
@@ -190,7 +190,7 @@ class NovicompuScraper(BaseScraper):
             # Extraer especificaciones usando _extract_specs_from_text (más general)
             # o _extract_specs si hay una tabla clara.
             # Para Novicompu, _extract_specs_from_text podría ser más fiable dado el contenido dinámico de VTEX.
-            product_details['specifications'] = self._extract_specs_from_text(soup.get_text())
+            product_details['specifications'] = self._extract_specifications(soup)
 
 
             product_details['url'] = product_url
@@ -199,20 +199,103 @@ class NovicompuScraper(BaseScraper):
             logging.error(f"[{self.store_name}] No se pudo obtener la página de detalle para {product_url}.")
         
         logging.debug(f"[{self.store_name}] Detalles del producto parseados: {product_details}")
+        print(f"## DEBUG PRINT: _extract_specifications - Final specs: {product_details.get('specifications', {})}")
         return product_details
 
-    # Re-implementar _extract_specifications si Novicompu tiene una tabla estructurada
-    # De lo contrario, confiar en _extract_specs_from_text de BaseScraper
     def _extract_specifications(self, soup):
-        # Este método se puede personalizar para la estructura de especificaciones específica de Novicompu
-        # Por ahora, simplemente llamará a la extracción de texto más general.
-        # Si Novicompu utiliza consistentemente product_specifications_table, puedes usar:
-        # spec_table = soup.select_one(self.selectors["product_specifications_table"])
-        # if spec_table:
-        #     return super()._extract_specs(spec_table) # Usar la extracción de tabla de BaseScraper
+        specs = {
+            'ram_gb': None,
+            'storage_gb': None,
+            'storage_type': None,
+            'cpu_brand': None,
+            'cpu_model': None,
+            'gpu_model': None,
+            'gpu_required': False
+        }
+
+        # Extraer solo el texto de la sección descripción para evitar ruido
+        description_container = soup.select_one(self.selectors.get("product_description_container", ""))
+        if description_container:
+            full_text = description_container.get_text(separator=' ', strip=True)
+        else:
+            # Fallback a todo el texto visible
+            full_text = soup.get_text(separator=' ', strip=True)
+
+        # --- RAM ---
+        ram_match = re.search(
+            r'Memoria\s*ram\s*[:\-]?\s*(\d+)\s*GB', full_text, re.IGNORECASE)
+        if not ram_match:
+            # Intento alternativo solo número + GB + RAM
+            ram_match = re.search(r'(\d+)\s*GB\s*ram', full_text, re.IGNORECASE)
+
+        if ram_match:
+            specs['ram_gb'] = int(ram_match.group(1))
         
-        # Recurrir a la extracción de texto de toda la página si no se encuentra ninguna tabla o se desea
-        return super()._extract_specs_from_text(soup.get_text())
+        # --- Almacenamiento ---
+        # Se aceptan formatos tipo "Almacenamiento 256GB SSD", "Almacenamiento: SSD de 256GB", "Almacenamiento 1Tb"
+        storage_match = re.search(
+            r'Almacenamiento[:\s]*((SSD|HDD)\s*(de)?\s*(\d+)\s*(TB|GB))', full_text, re.IGNORECASE)
+        if storage_match:
+            storage_str = storage_match.group(1)
+            # Extraer número y unidad
+            value_match = re.search(r'(\d+)', storage_str)
+            unit_match = re.search(r'(TB|GB)', storage_str, re.IGNORECASE)
+            type_match = re.search(r'(SSD|HDD)', storage_str, re.IGNORECASE)
+
+            if value_match and unit_match and type_match:
+                value = int(value_match.group(1))
+                unit = unit_match.group(1).upper()
+                storage_type = type_match.group(1).upper()
+
+                if unit == 'TB':
+                    specs['storage_gb'] = value * 1024
+                else:
+                    specs['storage_gb'] = value
+                specs['storage_type'] = storage_type
+        else:
+            # Alternativa: "Almacenamiento 1Tb"
+            alt_storage_match = re.search(
+                r'Almacenamiento[:\s]*([\d]+)\s*(TB|GB)', full_text, re.IGNORECASE)
+            if alt_storage_match:
+                value = int(alt_storage_match.group(1))
+                unit = alt_storage_match.group(2).upper()
+                specs['storage_type'] = None
+                specs['storage_gb'] = value * 1024 if unit == 'TB' else value
+
+        # --- CPU ---
+        # Extraer procesador, buscando el texto que empiece con "Procesador" o "Modelo" seguido de CPU
+        cpu_match = re.search(
+            r'(Procesador|Modelo)\s*[:\-]?\s*([A-Za-z0-9\-\™\s]+)', full_text, re.IGNORECASE)
+        if cpu_match:
+            cpu_str = cpu_match.group(2).strip()
+            # Intentar separar marca y modelo para CPU
+            if re.search(r'Intel', cpu_str, re.IGNORECASE):
+                specs['cpu_brand'] = 'Intel'
+            elif re.search(r'AMD', cpu_str, re.IGNORECASE):
+                specs['cpu_brand'] = 'AMD'
+            else:
+                specs['cpu_brand'] = None
+
+            specs['cpu_model'] = cpu_str
+
+        # --- GPU ---
+        # GPU puede estar en "Gráficos: ..." o "Gráficos ... integrados" o marca dedicada NVIDIA/AMD
+        gpu_dedicated_match = re.search(
+            r'(NVIDIA\s*GeForce\s*\w*|AMD\s*Radeon\s*\w*)', full_text, re.IGNORECASE)
+        if gpu_dedicated_match:
+            specs['gpu_model'] = gpu_dedicated_match.group(1).strip()
+            specs['gpu_required'] = True
+        else:
+            gpu_integrated_match = re.search(
+                r'Gráficos\s*[:\-]?\s*(Intel\s*integrados|Gráficos Intel integrados|Intel Iris Xe|AMD Radeon Graphics)', full_text, re.IGNORECASE)
+            if gpu_integrated_match:
+                specs['gpu_model'] = gpu_integrated_match.group(1).strip()
+                specs['gpu_required'] = False
+            else:
+                specs['gpu_model'] = None
+                specs['gpu_required'] = False
+
+        return specs
 
 # Para que el RecommendationEngine pueda encontrar este scraper
 if __name__ == '__main__':

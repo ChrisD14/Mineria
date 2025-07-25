@@ -18,22 +18,20 @@ class MobilestoreScraper(BaseScraper):
         self.currency_pattern = re.compile(r'[^\\d.,]+')
 
     def _clean_price(self, price_text):
-        """Limpia el texto del precio y lo convierte a flotante."""
         if not price_text:
-            logging.debug("Precio no encontrado o es nulo.")
-            print(f"## DEBUG PRINT: _clean_price - Input: '{price_text}', Cleaned: None (not found or null)")
             return None
-        
-        # Elimina símbolos de dólar y comas, luego convierte a flotante
-        cleaned_price = price_text.replace('$', '').replace(',', '')
+        cleaned = (
+            str(price_text)
+            .replace('$', '')
+            .replace('USD', '')
+            .replace(',', '')
+            .replace('\xa0', '')
+            .strip()
+        )
         try:
-            price = float(cleaned_price)
-            logging.debug(f"Precio limpiado: '{price_text}' -> {price}")
-            print(f"## DEBUG PRINT: _clean_price - Input: '{price_text}', Cleaned: {price}")
-            return price
+            return float(cleaned)
         except ValueError:
-            logging.error(f"No se pudo convertir el precio a flotante: '{price_text}' -> '{cleaned_price}'", exc_info=True)
-            print(f"## DEBUG PRINT: _clean_price - Error converting price: '{price_text}' -> '{cleaned_price}'")
+            logging.error(f"No se pudo convertir el precio a float: '{price_text}' -> '{cleaned}'", exc_info=True)
             return None
 
     def _extract_specifications(self, soup):
@@ -55,10 +53,8 @@ class MobilestoreScraper(BaseScraper):
             ram_gb = int(ram_match.group(1) or ram_match.group(2))
             specs['ram_gb'] = ram_gb
             logging.debug(f"RAM extraída: {ram_gb}GB de '{ram_match.group(0)}'")
-            print(f"## DEBUG PRINT: _extract_specifications - RAM match: {ram_match.group(0) if ram_match else 'None'}, Extracted RAM: {specs['ram_gb']}")
         else:
             logging.debug("No se pudo extraer la RAM del texto completo.")
-            print(f"## DEBUG PRINT: _extract_specifications - No RAM match found.")
 
         # Extraer Almacenamiento
         storage_match = re.search(r'(?:Almacenamiento:\s*)?(\d+)\s*(TB|GB)\s*(SSD|HDD)', full_text, re.IGNORECASE)
@@ -73,10 +69,9 @@ class MobilestoreScraper(BaseScraper):
                 specs['storage_gb'] = storage_value
             specs['storage_type'] = storage_type
             logging.debug(f"Almacenamiento extraído: {specs['storage_gb']}GB ({specs['storage_type']}) de '{storage_match.group(0)}'")
-            print(f"## DEBUG PRINT: _extract_specifications - Storage match: {storage_match.group(0) if storage_match else 'None'}, Extracted Storage: {specs['storage_gb']}GB {specs['storage_type']}")
+            
         else:
             logging.debug("No se pudo extraer el almacenamiento del texto completo.")
-            print(f"## DEBUG PRINT: _extract_specifications - No Storage match found.")
 
         # Extraer CPU
         cpu_match = re.search(r'(Intel|AMD)\s+(Core|Ryzen)\s*([i|r]\d+)-?[\w\d]*\s*(\w*\d*)?', full_text, re.IGNORECASE)
@@ -84,10 +79,8 @@ class MobilestoreScraper(BaseScraper):
             specs['cpu_brand'] = cpu_match.group(1)
             specs['cpu_model'] = f"{cpu_match.group(1)} {cpu_match.group(2)} {cpu_match.group(3)}{cpu_match.group(4) or ''}".strip()
             logging.debug(f"CPU extraída: {specs['cpu_brand']} {specs['cpu_model']} de '{cpu_match.group(0)}'")
-            print(f"## DEBUG PRINT: _extract_specifications - CPU match: {cpu_match.group(0) if cpu_match else 'None'}, Extracted CPU: {specs['cpu_brand']} {specs['cpu_model']}")
         else:
             logging.debug("No se pudo extraer el CPU del texto completo.")
-            print(f"## DEBUG PRINT: _extract_specifications - No CPU match found.")
 
         # Extraer GPU
         dedicated_gpu_match = re.search(r'(NVIDIA\s*GeForce\s*(?:RTX|GTX|MX)\s*\d{3,4}(?:[A-Z]X)?|AMD\s*Radeon\s*RX\s*\d{3,4}(?:[A-Z]X)?)\s*(?:\d+\s*GB)?', full_text, re.IGNORECASE)
@@ -95,26 +88,20 @@ class MobilestoreScraper(BaseScraper):
             specs['gpu_model'] = dedicated_gpu_match.group(1).strip()
             specs['gpu_required'] = True
             logging.debug(f"GPU dedicada extraída: {specs['gpu_model']} de '{dedicated_gpu_match.group(0)}'")
-            print(f"## DEBUG PRINT: _extract_specifications - Dedicated GPU match: {dedicated_gpu_match.group(0) if dedicated_gpu_match else 'None'}, Extracted GPU: {specs['gpu_model']}, GPU Required: {specs['gpu_required']}")
         else:
             integrated_gpu_match = re.search(r'(intel\s+iris\s+xe(?:\s+graphics)?|intel\s+uhd\s+graphics|amd\s+radeon\s+graphics)', full_text, re.IGNORECASE)
             if integrated_gpu_match:
                 specs['gpu_model'] = integrated_gpu_match.group(0).replace('intel', 'Intel').replace('amd', 'AMD').title()
                 specs['gpu_required'] = False
                 logging.debug(f"GPU integrada extraída: {specs['gpu_model']} de '{integrated_gpu_match.group(0)}'")
-                print(f"## DEBUG PRINT: _extract_specifications - Integrated GPU match: {integrated_gpu_match.group(0) if integrated_gpu_match else 'None'}, Extracted GPU: {specs['gpu_model']}, GPU Required: {specs['gpu_required']}")
             else:
                 logging.debug("No se pudo extraer ninguna GPU.")
-                print(f"## DEBUG PRINT: _extract_specifications - No GPU match found.")
 
         logging.debug(f"Especificaciones finales extraídas: {specs}")
         print(f"## DEBUG PRINT: _extract_specifications - Final specs: {specs}")
         return specs
 
     def search_products(self, query):
-        """
-        Busca productos en Mobilestore.ec usando Selenium.
-        """
         search_url = self.base_url + '?s=' + query.replace(' ', '+')
         logging.info(f"[MobilestoreScraper] Buscando productos en: {search_url}")
 
@@ -142,89 +129,65 @@ class MobilestoreScraper(BaseScraper):
         return products_data
 
     def parse_product_page(self, product_url):
-        """
-        Parsea la página de detalle de un producto individual en Mobilestore.ec usando Selenium.
-        """
         logging.info(f"[MobilestoreScraper] Parseando página de producto: {product_url}")
-        
-        # Obtenemos la página primero, esperando que el nombre del producto (h1) esté presente
+
         soup = self._fetch_page_with_selenium(product_url, self.selectors["product_name"])
         if not soup:
             logging.error(f"No se pudo obtener la página del producto para: {product_url}")
             return None
 
-        price_text = "$0.00" # Valor por defecto
+        price_text = "$0.00"
 
-        if self.driver: # Asegurarse de que el driver de Selenium esté disponible
+        if self.driver:
             try:
-                # El selector de precio ahora apunta a la etiqueta <ins> que contiene el precio actual
-                price_selector = self.selectors["product_price"] 
-                
-                # Primero, esperamos que el contenedor general del precio (<p.price>) sea visible
-                WebDriverWait(self.driver, 10).until(
-                    EC.visibility_of_element_located((By.CSS_SELECTOR, "p.price"))
+                price_locator = (By.CSS_SELECTOR, self.selectors["product_price"])
+
+                # Espera a que el <bdi> exista y contenga algún número
+                WebDriverWait(self.driver, 5).until(
+                    lambda d: re.search(r'\d', d.find_element(*price_locator).get_attribute("textContent") or "")
                 )
 
-                # Ahora, esperamos que el elemento <ins> dentro de <p.price> tenga un texto válido y un valor > 0
-                def price_has_valid_text(driver):
-                    try:
-                        # Encontrar el elemento <ins> que contiene el precio actual
-                        ins_price_element = driver.find_element(By.CSS_SELECTOR, price_selector)
-                        
-                        # Obtener su outerHTML para parsearlo con BeautifulSoup
-                        outer_html_ins = ins_price_element.get_attribute('outerHTML')
-                        soup_ins = BeautifulSoup(outer_html_ins, 'html.parser')
-                        
-                        # Extraer todo el texto de la etiqueta <ins>
-                        text = soup_ins.get_text(strip=True)
-                        
-                        # Mensajes de depuración detallados
-                        print(f"## DEBUG PRICE CHECK (Mobilestore) - Selector usado para <ins>: '{price_selector}'")
-                        print(f"## DEBUG PRICE CHECK (Mobilestore) - outerHTML de <ins>: {outer_html_ins}")
-                        print(f"## DEBUG PRICE CHECK (Mobilestore) - Texto extraído de BeautifulSoup (<ins>): '{text}'")
-                        
-                        cleaned_price_value = self._clean_price(text)
-                        
-                        print(f"## DEBUG PRICE CHECK (Mobilestore) - Valor de precio limpio: {cleaned_price_value}")
-                        
-                        return cleaned_price_value is not None and cleaned_price_value > 0.0
-                    except Exception as e:
-                        logging.debug(f"Excepción durante la verificación de price_has_valid_text (reintento con <ins>): {e}")
-                        return False
+                price_el = self.driver.find_element(*price_locator)
+                # textContent suele ser más fiable que .text con WooCommerce + JS
+                raw_text = price_el.get_attribute("textContent").strip()
 
-                # Tiempo de espera principal para que el precio se cargue y sea válido
-                WebDriverWait(self.driver, 30).until(price_has_valid_text) 
-                
-                # Una vez que la condición se cumple, obtenemos el texto final del precio
-                price_element = self.driver.find_element(By.CSS_SELECTOR, price_selector) 
-                price_text = price_element.text.strip() # Usamos .text.strip() aquí, ya que ya sabemos que el elemento tiene texto válido
-                logging.info(f"Precio encontrado y texto válido. Texto crudo del precio: '{price_text}'")
+                # DEBUG opcional
+                logging.debug(f"[MobilestoreScraper] raw price text: '{raw_text}'")
+
+                price_text = self._extract_numeric_from_price(raw_text)
 
             except TimeoutException as e:
-                logging.warning(f"Timeout waiting for price element or valid price for {product_url}: {e}")
-                print(f"## DEBUG PRINT: parse_product_page - Elemento de precio no encontrado o no se actualizó de $0.00 (Timeout). Error: {e}")
-                price_text = "$0.00" # Mantener el valor por defecto si hay timeout
-            except Exception as e:
+                logging.warning(f"Timeout esperando el precio en {product_url}: {e}")
                 logging.error(f"Error al extraer el precio para {product_url}: {e}", exc_info=True)
-                print(f"## DEBUG PRINT: parse_product_page - Error general al extraer el precio. Error: {e}")
-                price_text = "$0.00" # Mantener el valor por defecto en caso de error
 
+        # Nombre
         name_element = soup.select_one(self.selectors["product_name"])
         name = name_element.get_text(strip=True) if name_element else "N/A"
 
-        # Pasa el price_text extraído a _clean_price
         price = self._clean_price(price_text)
 
         specs = self._extract_specifications(soup)
-        
+
         product_details = {
             'name': name,
-            'price': price, 
+            'price': price,
             'url': product_url,
-            **specs
+            'store': 'mobilestore',
+            'specifications': specs
         }
         logging.debug(f"Detalles del producto parseados: {product_details}")
         return product_details
+
+    def _extract_numeric_from_price(self, text):
+        """
+        Devuelve la parte numérica del precio encontrada en el texto.
+        Ej: '$ 1,149.00 Incluye IVA' -> '1,149.00'
+        """
+        if not text:
+            return None
+        text = text.replace('\xa0', ' ')
+        m = re.search(r'(\d[\d\.,]*)', text)
+        return m.group(1) if m else None
 
 # Para que el RecommendationEngine pueda encontrar este scraper
 if __name__ == '__main__':
