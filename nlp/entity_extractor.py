@@ -77,7 +77,6 @@ def extract_entities(user_prompt: str) -> dict:
     try:
         response = model.generate_content(prompt)
         gemini_raw_text = response.text.strip()
-        #logging.info(f"Respuesta cruda de Gemini: '{gemini_raw_text}'")
 
         # *** CÓDIGO CORREGIDO AQUÍ: Elimina los delimitadores de bloque de código Markdown ***
         if gemini_raw_text.startswith('```json') and gemini_raw_text.endswith('```'):
@@ -86,7 +85,6 @@ def extract_entities(user_prompt: str) -> dict:
             json_string = gemini_raw_text.strip() # En caso de que no use el formato de markdown
 
         extracted_data = json.loads(json_string) # Carga el JSON limpio
-        # *** FIN DEL CÓDIGO CORREGIDO ***
 
         # Copia los valores extraídos a la estructura final, manejando los que pueden faltar
         entities = initial_entities_structure.copy()
