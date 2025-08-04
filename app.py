@@ -31,7 +31,6 @@ def recommend():
     
     try:
         # Paso 1: Traducir la consulta del usuario a inglés para el procesamiento NLP
-        # *** CAMBIO AQUÍ: LLAMAR A LA FUNCIÓN CON UN SOLO ARGUMENTO ***
         translation_result = translate_text_to_english(user_prompt)
         
         if not translation_result['success']:

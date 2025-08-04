@@ -111,12 +111,14 @@ RECOMMENDATION_THRESHOLDS = {
     # RAM mínima sugerida para diferentes propósitos
     "office_ram_min_gb": 8,
     "gaming_ram_min_gb": 16,
-    "design_ram_min_gb": 16, # Ajusta a 32 si el diseño es muy pesado
+    "design_ram_min_gb": 16,
+    "workstation_ram_min_gb": 32, 
 
     # Almacenamiento mínimo sugerido para diferentes propósitos
     "office_storage_min_gb": 256, # SSD
     "gaming_storage_min_gb": 512, # SSD
     "design_storage_min_gb": 512, # SSD o 1TB HDD + SSD
+    "workstation_storage_min_gb": 32,
 
     # GPU mínima sugerida para gaming de alto presupuesto (ej. keyword para búsqueda o match)
     "gaming_gpu_min": "RTX 3050", # O ajusta a RTX 4060, RX 7600, etc.

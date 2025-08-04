@@ -19,15 +19,8 @@ def extract_entities(user_prompt: str) -> dict:
     configure_gemini_api_for_extractor()
 
     model = genai.GenerativeModel('models/gemini-2.0-flash-001')
-    prompt = f"""
-    Extract the following entities from the user's prompt. For specs, include ram_gb, storage_gb, storage_type (SSD, HDD, NVMe), cpu_brand (Intel, AMD, Apple), gpu_required (boolean, or null if not explicitly specified), gpu_model. Also extract budget (low, medium, high), modality (laptop, desktop), min_price, max_price.
-
-    User prompt: "{user_prompt}"
-
-    Respond only with a JSON object. If a field is not mentioned, set its value to null or its default (e.g., gpu_required: false, empty list for purpose/modality).
-    Example: {{"purpose": ["graphic_design"], "specs": {{"ram_gb": 32, "storage_gb": null, "storage_type": null, "cpu_brand": null, "gpu_required": true, "gpu_model": null}}, "budget": null, "modality": ["laptop"], "min_price": null, "max_price": null}}
-    """
-
+    
+    # Mueve la inicialización de initial_entities_structure fuera del try-except
     initial_entities_structure = {
         "purpose": [],
         "specs": {
@@ -35,7 +28,7 @@ def extract_entities(user_prompt: str) -> dict:
             "storage_gb": None,
             "storage_type": None,
             "cpu_brand": None,
-            "gpu_required": False, # Default to False
+            "gpu_required": None,
             "gpu_model": None
         },
         "budget": None,
@@ -44,25 +37,70 @@ def extract_entities(user_prompt: str) -> dict:
         "max_price": None
     }
 
+    prompt = f"""
+    Eres un experto en extracción de entidades para hardware de computadoras.
+    Extrae las siguientes entidades de la solicitud del usuario. Si un valor no es especificado directamente,
+    intenta inferirlo basándote en el contexto y palabras clave, especialmente para el 'purpose', 'ram_gb' y 'cpu_brand'.
+
+    Las entidades a extraer son:
+    - purpose: (string, uno de: 'gaming', 'graphic_design', 'programming', 'office', 'studying', 'general_use', 'workstation', o null si no se puede inferir)
+        * Inferir 'gaming' si se menciona "juegos", "gaming", "tarjeta gráfica potente".
+        * Inferir 'graphic_design' o 'workstation' si se menciona "diseño gráfico", "edición de video", "renderizado", "gran procesamiento", "potente".
+        * Inferir 'programming' si se menciona "programación", "desarrollo", "máquinas virtuales".
+        * Inferir 'office' o 'studying' si se menciona "trabajo de oficina", "clases", "escuela", "universidad", "tareas básicas".
+        * Inferir 'general_use' si es para uso diario sin especificaciones de alto rendimiento.
+    - specs: (object)
+        - ram_gb: (integer, GB de RAM, o null si no se especifica y no se puede inferir. Si se menciona "mucha RAM", "gran RAM" o "alto rendimiento", inferir 16 o 32)
+        - storage_gb: (integer, GB de almacenamiento, o null)
+        - storage_type: (string, 'SSD', 'HDD', 'NVMe', o null)
+        - cpu_brand: (string, 'Intel', 'AMD', 'Apple', o null. Si se menciona "gran procesamiento" o "alto rendimiento", inferir 'Intel' o 'AMD' si no se especifica uno, sugiriendo un chip de alta gama.)
+        - gpu_required: (boolean, true si se menciona "tarjeta gráfica", "GPU", "gaming"; false si se menciona "gráficos integrados" o no es relevante, o null)
+        - gpu_model: (string, modelo específico de GPU, o null)
+    - budget: (string, 'low', 'medium', 'high', o null. Inferir 'high' si se menciona "alto rendimiento", "gran procesamiento", "gaming de gama alta".)
+    - modality: (array of strings, ej. ["laptop", "desktop"], o null si no se especifica)
+    - min_price: (number, precio mínimo, o null)
+    - max_price: (number, precio máximo, o null)
+
+    La respuesta debe ser solo un objeto JSON. Si un campo no es aplicable o no se puede inferir, usa null.
+
+    Ejemplos de inferencia:
+    - "Necesito una laptop para jugar" -> {{"purpose": "gaming", "specs": {{"gpu_required": true}}, "modality": ["laptop"]}}
+    - "Busco una computadora con mucha ram y gran procesamiento" -> {{"purpose": "workstation", "specs": {{"ram_gb": 32, "cpu_brand": "Intel", "gpu_required": null}}, "modality": ["computer"], "budget": "high"}}
+    - "Laptop para diseño gráfico con tarjeta de video" -> {{"purpose": "graphic_design", "specs": {{"gpu_required": true}}, "ram_gb": 32, "modality": ["laptop"], "budget": "high"}}
+    - "Computadora barata para la universidad" -> {{"purpose": "studying", "budget": "low", "modality": ["computer"]}}
+    - "Laptop 32gb ram" -> {{"purpose": "general_use", "specs": {{"ram_gb": 32}}, "modality": ["laptop"]}}
+    
+    Solicitud del usuario: '{user_prompt}'
+    """
+
+    logging.info(f"Enviando consulta a Gemini para extracción de entidades: '{user_prompt}'")
     try:
-        logging.info(f"Enviando consulta a Gemini para extracción de entidades: '{user_prompt}'")
         response = model.generate_content(prompt)
         gemini_raw_text = response.text.strip()
-        logging.info(f"Respuesta cruda de Gemini: '{gemini_raw_text}'")
+        #logging.info(f"Respuesta cruda de Gemini: '{gemini_raw_text}'")
 
-        # --- MODIFICACIÓN CLAVE AQUÍ: Limpiar la respuesta de Gemini ---
+        # *** CÓDIGO CORREGIDO AQUÍ: Elimina los delimitadores de bloque de código Markdown ***
         if gemini_raw_text.startswith('```json') and gemini_raw_text.endswith('```'):
-            gemini_raw_text = gemini_raw_text[7:-3].strip() 
+            json_string = gemini_raw_text[len('```json'):-len('```')].strip()
+        else:
+            json_string = gemini_raw_text.strip() # En caso de que no use el formato de markdown
 
-        extracted_data = json.loads(gemini_raw_text)
+        extracted_data = json.loads(json_string) # Carga el JSON limpio
+        # *** FIN DEL CÓDIGO CORREGIDO ***
 
+        # Copia los valores extraídos a la estructura final, manejando los que pueden faltar
         entities = initial_entities_structure.copy()
-
-        if "purpose" in extracted_data and isinstance(extracted_data["purpose"], list):
-            entities["purpose"] = extracted_data["purpose"]
+        
+        # 'purpose' puede ser una cadena o una lista, o null. Asegúrate de que siempre sea una lista.
+        if "purpose" in extracted_data and extracted_data["purpose"] is not None:
+            if isinstance(extracted_data["purpose"], str):
+                entities["purpose"] = [extracted_data["purpose"]]
+            elif isinstance(extracted_data["purpose"], list):
+                entities["purpose"] = extracted_data["purpose"]
 
         if "specs" in extracted_data and isinstance(extracted_data["specs"], dict):
-            specs = entities["specs"]
+            specs = entities["specs"] # Trabaja directamente en el sub-diccionario 'specs'
+
             if "ram_gb" in extracted_data["specs"]:
                 specs["ram_gb"] = extracted_data["specs"]["ram_gb"]
             if "storage_gb" in extracted_data["specs"]:
@@ -71,8 +109,11 @@ def extract_entities(user_prompt: str) -> dict:
                 specs["storage_type"] = extracted_data["specs"]["storage_type"]
             if "cpu_brand" in extracted_data["specs"]:
                 specs["cpu_brand"] = extracted_data["specs"]["cpu_brand"]
+            
+            # Ajuste para gpu_required si viene como True/False o null
             if "gpu_required" in extracted_data["specs"]:
                 specs["gpu_required"] = extracted_data["specs"]["gpu_required"]
+            
             if "gpu_model" in extracted_data["specs"]:
                 specs["gpu_model"] = extracted_data["specs"]["gpu_model"]
 
@@ -91,7 +132,7 @@ def extract_entities(user_prompt: str) -> dict:
     except json.JSONDecodeError as e:
         logging.error(f"Error al decodificar la respuesta JSON de Gemini: {e}", exc_info=True)
         logging.error(f"Respuesta de Gemini que causó el error: '{gemini_raw_text}'")
-        return initial_entities_structure
+        return initial_entities_structure # Ahora initial_entities_structure siempre estará definida
     except Exception as e:
-        logging.error(f"Error inesperado al extraer entidades con Gemini: {e}", exc_info=True)
-        return initial_entities_structure
+        logging.error(f"Error inesperado durante la extracción de entidades: {e}", exc_info=True)
+        return initial_entities_structure # Ahora initial_entities_structure siempre estará definida
